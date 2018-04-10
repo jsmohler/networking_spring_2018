@@ -135,14 +135,6 @@ int main(int argc, char *argv[]) {
      * recv or recvfrom...
      */
 
-    // Check if bind worked, clean up and exit if not.
-    if (byte_count == -1) {
-        std::cerr << "Failed to bind!" << std::endl;
-        std::cerr << strerror(errno) << std::endl;
-        close(udp_socket);
-        return 1;
-    }
-
     byte_count = recvfrom(udp_socket, buf, 2047, 0, (struct sockaddr *)&addr, &fromlen);
 
     // Check if receive worked, clean up and exit if not.
@@ -165,8 +157,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-
-
+    
     uint16_t type = buf[0] | uint16_t(buf[1]) << 8;
     uint16_t secret = buf[2] | uint16_t(buf[3]) << 8;
 
