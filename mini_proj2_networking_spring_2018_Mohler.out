@@ -1,5 +1,15 @@
-chat_monitor.cpp:15:22: fatal error: udp_chat.h: No such file or directory
-compilation terminated.
-make: *** [udpchatmonitor] Error 1
-Make unsuccessful
-jormohle/networking_spring_2018_Mohler Score 3 out of a possible 39
+Make successful
+udpchatcli exited properly on quit command!
+Ran udpchatcli successfully!
+udpchatcli exited properly on quit command!
+Ran udpchatcli successfully!
+udpchatcli exited properly on quit command!
+Ran udpchatcli successfully!
+Found correct number of 'Added monitor' in server output (3)
+Found correct number of 'Added client' in server output (3)
+Found correct number of 'Removed monitor' in server output (3)
+Missed line testuser said: firstmessage in monitor output.
+Missed line testuser said: secondmessage in monitor output.
+Missed line testuser said: thirdmessage with spaces included in monitor output.
+Missed line testuser said: a very long message indeed. so long, in fact, that the human creating this Message DOESN't know what exactly to write. Also: will it work? unknown. Including special characters shouldn't make any difference to a messaging client, right? ####### Really who knows until you try?????? in monitor output.
+jormohle/networking_spring_2018_Mohler Score 32 out of a possible 39
