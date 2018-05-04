@@ -74,10 +74,11 @@ int parse_file_info(char* buf, uint16_t *filename_len, uint16_t *total_pieces, u
 
   memcpy(total_pieces, &buf[index+2], 2);
   *total_pieces = ntohs(*total_pieces);
-  return 0;
 
   memcpy(filesize_bytes, &buf[index+4], 4);
   *filesize_bytes = ntohs(*filesize_bytes);
+
+  return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -101,7 +102,7 @@ int main(int argc, char *argv[]) {
   memset(&dest_addr, 0, sizeof(struct sockaddr_in));
 
   // Note: this needs to be 3, because the program name counts as an argument!
-  if (argc < 5) {
+  if (argc < 3) {
     std::cerr << "Please specify IP PORT USERNAME PASSWORD as first four arguments." << std::endl;
     return 1;
   }
@@ -154,8 +155,12 @@ int main(int argc, char *argv[]) {
   dest_addr.sin_port = htons(port);
 
   //username and password
-  std::string username = argv[3];
+  std::string username;
+  std::cout << "Enter a username: \n";
+  std::cin >> username;
   std::string pswd = argv[4];
+  std::cout << "Enter a password: \n";
+  std::cin >> pswd;
   unsigned char password[16];
 
   MD5((const unsigned char*) pswd.c_str(), pswd.length(), password);
@@ -191,82 +196,87 @@ int main(int argc, char *argv[]) {
   uint32_t filesize_bytes;
 
   parse_response_header(buf, &response_type, &response_length, 0);
-  parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
 
-  //Check if received the correct amount, clean up and exit if not.
-  if (ret != response_length) {
-    std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
-    std::cerr << strerror(errno) << std::endl;
-    close(udp_socket);
-    return 1;
-  }
-
-  if (response_code == AUTH_OK){
-    struct SUCMSClientGetResult result;
-    result.command_type = htons(COMMAND_LIST);
-    result.result_id = htons(id);
-    result.message_number = 0;
-
-    msg_size+= sizeof(result);
-
-    //Send SUCMSHeader + CommandMessage + username + SUCMSClientGetResult
-    build_command_message(COMMAND_CLIENT_GET_RESULT, buf, username, password, msg_size - sizeof(SUCMSHeader));
-
-    memcpy(&buf[msg_size-sizeof(result)], &result, sizeof(result));
-
-    // uint16_t test;
-    // memcpy(&test, &buf[sizeof(struct SUCMSHeader)+2], 2);
-    // std::cout << "Send command: " << ntohs(test) << std::endl;
-
-    //Send SUCMS Header + COMMAND_LIST + username + SUCMSClientMessage
-    ret = sendto(udp_socket, &buf, msg_size, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
-
-    // Check if sent the correct amount, clean up and exit if not.
-    if (ret != msg_size) {
-      std::cerr << "Sent " << ret << " instead of " << msg_size << "."  << std::endl;
-      std::cerr << strerror(errno) << std::endl;
-      close(udp_socket);
-      return 1;
-    }
-
-    //Receive response SUCMSHeader + SUCMSFileListResult + [SUCMSFileInfo + filename]
-    ret = recvfrom(udp_socket, buf, MAX_SEGMENT_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_len);
-    parse_response_header(buf, &response_type, &response_length, 0);
+  if (response_type == MSG_COMMAND_RESPONSE) {
+    parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
 
     //Check if received the correct amount, clean up and exit if not.
-    if (ret != response_length+sizeof(SUCMSHeader)) {
-      std::cerr << "Received " << ret << " instead of " << response_length+sizeof(SUCMSHeader) << "."  << std::endl;
+    if (ret != response_length) {
+      std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
       std::cerr << strerror(errno) << std::endl;
       close(udp_socket);
       return 1;
     }
 
-    if (response_type == MSG_LIST_RESPONSE) {
-      parse_list_result(buf, &id, &message_number, sizeof(struct SUCMSHeader));
+    if (response_code == AUTH_OK){
+      struct SUCMSClientGetResult result;
+      result.command_type = htons(COMMAND_LIST);
+      result.result_id = htons(id);
+      result.message_number = 0;
 
-      int index = sizeof(struct SUCMSHeader)+sizeof(struct SUCMSFileListResult);
-      while (index < response_length) {
-        parse_file_info(buf, &filename_len, &total_pieces, &filesize_bytes, index);
+      msg_size+= sizeof(result);
 
-        char filename[filename_len];
-        memcpy(filename, &buf[index+sizeof(SUCMSFileInfo)], filename_len);
-        filename[filename_len] = '\0';
+      //Send SUCMSHeader + CommandMessage + username + SUCMSClientGetResult
+      build_command_message(COMMAND_CLIENT_GET_RESULT, buf, username, password, msg_size - sizeof(SUCMSHeader));
 
-        //Print in format File list entry: test.txt of size 28 bytes.
-        std::cout << "File list entry: " << filename << " of size " << filesize_bytes << std::endl;
-        index = index + sizeof(struct SUCMSFileInfo) + filename_len;
+      memcpy(&buf[msg_size-sizeof(result)], &result, sizeof(result));
+
+      // uint16_t test;
+      // memcpy(&test, &buf[sizeof(struct SUCMSHeader)+2], 2);
+      // std::cout << "Send command: " << ntohs(test) << std::endl;
+
+      //Send SUCMS Header + COMMAND_LIST + username + SUCMSClientMessage
+      ret = sendto(udp_socket, &buf, msg_size, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
+
+      // Check if sent the correct amount, clean up and exit if not.
+      if (ret != msg_size) {
+        std::cerr << "Sent " << ret << " instead of " << msg_size << "."  << std::endl;
+        std::cerr << strerror(errno) << std::endl;
+        close(udp_socket);
+        return 1;
       }
-    } else if (response_type == MSG_COMMAND_RESPONSE) {
+
+      //Receive response SUCMSHeader + SUCMSFileListResult + [SUCMSFileInfo + filename]
+      ret = recvfrom(udp_socket, buf, MAX_SEGMENT_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_len);
+      parse_response_header(buf, &response_type, &response_length, 0);
+
+      //Check if received the correct amount, clean up and exit if not.
+      if (ret != response_length+sizeof(SUCMSHeader)) {
+        std::cerr << "Received " << ret << " instead of " << response_length+sizeof(SUCMSHeader) << "."  << std::endl;
+        std::cerr << strerror(errno) << std::endl;
+        close(udp_socket);
+        return 1;
+      }
+
+      if (response_type == MSG_LIST_RESPONSE) {
+        parse_list_result(buf, &id, &message_number, sizeof(struct SUCMSHeader));
+
+        int index = sizeof(struct SUCMSHeader)+sizeof(struct SUCMSFileListResult);
+        while (index < response_length) {
+          parse_file_info(buf, &filename_len, &total_pieces, &filesize_bytes, index);
+
+          char filename[filename_len];
+          memcpy(filename, &buf[index+sizeof(SUCMSFileInfo)], filename_len);
+          filename[filename_len] = '\0';
+
+          //Print in format File list entry: test.txt of size 28 bytes.
+          std::cout << "File list entry: " << filename << " of size " << filesize_bytes << " bytes." << std::endl;
+          index = index + sizeof(struct SUCMSFileInfo) + filename_len;
+        }
+      } else if (response_type == MSG_COMMAND_RESPONSE) {
         parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
         std::cout << "Response code: " << response_code << std::endl;
+      }
+
+    } else if (response_code == AUTH_FAILED) {
+      std::cout << "Received AUTH_FAILED from server.\n";
+    } else  {
+      std::cout << "Something went very very wrong :(\n";
+      std::cout << "Response Code: " << response_code << std::endl;
     }
-
-  } else if (response_code == AUTH_FAILED) {
-    std::cout << "Received AUTH_FAILED from server.\n";
-  } else  {
+  } else {
     std::cout << "Something went very very wrong :(\n";
-    std::cout << "Response Code: " << response_code << std::endl;
+    std::cout << "Response Type: " << response_type << std::endl;
   }
-
 
 }
