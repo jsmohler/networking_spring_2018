@@ -201,6 +201,7 @@ int main(int argc, char *argv[]) {
     parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
 
     //Check if received the correct amount, clean up and exit if not.
+    std::cout << response_length <<std::endl;
     if (ret != response_length) {
       std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
       std::cerr << strerror(errno) << std::endl;

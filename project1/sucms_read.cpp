@@ -185,7 +185,7 @@ int main(int argc, char *argv[]) {
   struct sockaddr_in recv_addr;
   socklen_t recv_addr_len = sizeof(struct sockaddr_in);;
   ret = recvfrom(udp_socket, buf, MAX_SEGMENT_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_len);
-  std::cout << "Received!\n";
+
   //Response variables
   uint16_t response_type;
   uint16_t response_length;
@@ -209,20 +209,18 @@ int main(int argc, char *argv[]) {
 
   if (response_type == MSG_COMMAND_RESPONSE) {
     parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
-    std::cout << "msg_count: " << message_count << std::endl;
     if (response_code == AUTH_OK){
-      //std::vector<char*> segments;
-
       struct SUCMSClientGetResult result;
       result.command_type = htons(COMMAND_READ);
-
       msg_size = sizeof(struct SUCMSHeader) + sizeof(struct CommandMessage)+ username.length()+sizeof(struct SUCMSClientGetResult);
 
       std::string data;
       std::vector<void*> segments;
-      for (int i = 0; i < message_count; i++) {
+      message_number = 0;
+      for (int i = 0; i < 5; i++) {
         result.result_id = htons(id);
-        result.message_number = i;
+        result.message_number = htons(i);
+
         //Send SUCMSHeader + CommandMessage + username + SUCMSClientGetResult
         build_command_message(COMMAND_CLIENT_GET_RESULT, buf, username, password, msg_size - sizeof(SUCMSHeader));
 
@@ -243,17 +241,9 @@ int main(int argc, char *argv[]) {
         ret = recvfrom(udp_socket, buf, MAX_SEGMENT_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_len);
         parse_response_header(buf, &response_type, &response_length, 0);
 
-        int length;
-
-        // if (i == 0) {
-        //   length = response_length+sizeof(SUCMSHeader);
-        // } else {
-          length = response_length+sizeof(struct SUCMSHeader);
-        //}
-
         //Check if received the correct amount, clean up and exit if not.
-        if (ret != length && ret != length-4) {
-          std::cerr << "Received " << ret << " instead of " << length << "."  << std::endl;
+        if (ret != response_length+sizeof(SUCMSHeader)) {
+          std::cerr << "Received " << ret << " instead of " << response_length+sizeof(SUCMSHeader) << "."  << std::endl;
           std::cerr << strerror(errno) << std::endl;
           close(udp_socket);
           return 1;
@@ -262,7 +252,8 @@ int main(int argc, char *argv[]) {
         if (response_type == MSG_FILE_DATA) {
           segments.push_back(buf);
           parse_file_data(buf, &id, &message_number, &file_bytes, &bytes_offset, sizeof(SUCMSHeader));
-          std::string file_data = std::string(&buf[bytes_offset], &buf[bytes_offset+file_bytes]);
+
+          std::string file_data = std::string(&buf[bytes_offset+10], &buf[bytes_offset+file_bytes+20]);
           data.append(file_data);
         } else {
           std::cout << "Something went very very wrong :(\n";
