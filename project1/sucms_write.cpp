@@ -189,9 +189,6 @@ int main(int argc, char *argv[]) {
   std::string filename;
   std::cout << "Enter a filename: \n";
   std::cin >> filename;
-  std::string filepath;
-  std::cout << "Enter a filepath: \n";
-  std::cin >> filepath;
   unsigned char password[16];
 
   MD5((const unsigned char*) pswd.c_str(), pswd.length(), password);
@@ -199,10 +196,12 @@ int main(int argc, char *argv[]) {
   build_command_message(COMMAND_CREATE, buf, username, password, msg_size-sizeof(SUCMSHeader));
 
   //Read in portions of file
-  std::ifstream file (filepath.c_str());
+  std::ifstream file (filename.c_str());
   file.seekg(0, file.end);
   int file_len = file.tellg();
   file.seekg(0, file.beg);
+
+  std::cout << "File length: " << file_len << std::endl;
 
   //Send SUCMS Header + COMMAND_READ + username + SUCMSFileInfo + filename
   struct SUCMSFileInfo write_request;
@@ -210,8 +209,8 @@ int main(int argc, char *argv[]) {
   write_request.filename_len = filename.length();
 
   int total = ceil(file_len/(MAX_SEGMENT_SIZE - sizeof(SUCMSHeader) - sizeof(SUCMSClientFileData) - username.length()));
-
-  write_request.total_pieces = total;
+  std::cout << "total: " << total << std::endl;
+  write_request.total_pieces = total+1;
 
   memcpy(&buf[msg_size-sizeof(write_request)-filename.length()], &write_request, sizeof(write_request));
   memcpy(&buf[msg_size-filename.length()], filename.c_str(), filename.length());
@@ -248,8 +247,20 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  std::vector<uint16_t> seg_lengths;
+  int overhead = sizeof(SUCMSHeader) + sizeof(SUCMSClientFileData) + username.length();
+  int max_data_length = MAX_SEGMENT_SIZE - overhead;
+  for (int i = 0; i < total; i++) {
+    seg_lengths.push_back(max_data_length);
+  }
+  seg_lengths.push_back(file_len - (total*max_data_length));
 
-  int chunk_length = (MAX_SEGMENT_SIZE - sizeof(SUCMSHeader) - sizeof(SUCMSClientFileData) - username.length());
+  for (int i = 0; i < seg_lengths.size(); i++) {
+    std::cout << "Segment " << i << " length is: " << seg_lengths[i] << std::endl;
+  }
+
+  int chunk_length = file_len / total;
+  //std::cout << chunk_length << std::endl;
   msg_size = sizeof(struct SUCMSHeader) + sizeof(struct SUCMSClientFileData) + username.length()+chunk_length;
   if (response_type == MSG_COMMAND_RESPONSE) {
     parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
@@ -271,6 +282,8 @@ int main(int argc, char *argv[]) {
       std::cout << "Something went very very wrong :(\n";
       std::cout << "Response Code: " << response_code << std::endl;
     }
+
+    file.close();
   } else {
     std::cout << "Something went very very wrong :(\n";
     std::cout << "Response Type A: " << response_type << std::endl;

@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <openssl/md5.h>
 #include <vector>
+#include <fstream>
 #include<netdb.h> //hostent
 
 #include "SUCMS.h"
@@ -228,6 +229,10 @@ int main(int argc, char *argv[]) {
       std::vector<std::string> segments;
       message_number = 0;
 
+      //Make output filepath
+      std::ofstream file;
+      file.open(filename.c_str(), std::ios::out);
+
       for (int i = 0; i < message_count; i++) {
         result.message_number = htons(i);
         result.result_id = htons(id);
@@ -264,9 +269,10 @@ int main(int argc, char *argv[]) {
 
           parse_file_data(buf, &id, &message_number, &file_bytes, &bytes_offset, sizeof(SUCMSHeader));
 
-          int index = bytes_offset;
+          //write data to file
+          int index = 14;
           while (index < ret) {
-            std::cout << buf[index];
+            file << buf[index];
             index++;
           }
 
@@ -276,7 +282,7 @@ int main(int argc, char *argv[]) {
           parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(SUCMSHeader));
           std::cout << "Response Code: " << response_code << std::endl;
         }
-        std::cout << std::endl;
+        file.close();// closes file; always do this when you are done using the file
       }
 
     } else if (response_code == AUTH_FAILED) {
