@@ -282,9 +282,8 @@ int main(int argc, char *argv[]) {
           parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(SUCMSHeader));
           std::cout << "Response Code: " << response_code << std::endl;
         }
-        file.close();// closes file; always do this when you are done using the file
       }
-
+      file.close();// closes file; always do this when you are done using the file
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
     } else if (response_code == NO_SUCH_FILE) {
