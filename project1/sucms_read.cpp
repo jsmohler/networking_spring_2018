@@ -12,11 +12,6 @@
 #include <stdlib.h>
 #include <openssl/md5.h>
 #include <vector>
-#include <iostream>
-#include <iterator>
-#include <exception>
-#include <algorithm>
-#include <iomanip>
 #include<netdb.h> //hostent
 
 #include "SUCMS.h"
@@ -102,7 +97,7 @@ int main(int argc, char *argv[]) {
 
   // Note: this needs to be 3, because the program name counts as an argument!
   if (argc < 3) {
-    std::cerr << "Please specify URL PORT as first two arguments." << std::endl;
+    std::cerr << "Please specify IP PORT USERNAME PASSWORD as first four arguments." << std::endl;
     return 1;
   }
   // Set up variables "aliases"
@@ -125,7 +120,7 @@ int main(int argc, char *argv[]) {
   // equivalent required for using the address in code.
   // Note that because dest_addr is a sockaddr_in (again, IPv4) the 'sin_addr'
   // member of the struct is used for the IP
-	int  **ppaddr;
+  int  **ppaddr;
 	struct sockaddr_in sockAddr;
 	std::string addr;
 
@@ -184,7 +179,7 @@ int main(int argc, char *argv[]) {
   read_request.result_id = 0;
   read_request.filesize_bytes = 0;
 
-  memcpy(&buf[msg_size-sizeof(read_request)-filename.length()], &read_request, sizeof(read_request));
+  memcpy(&buf[msg_size-sizeof(read_request)-filename.length()], &read_request, 8);
   memcpy(&buf[msg_size-filename.length()], filename.c_str(), filename.length());
   ret = sendto(udp_socket, &buf, msg_size, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 
@@ -230,11 +225,12 @@ int main(int argc, char *argv[]) {
       msg_size = sizeof(struct SUCMSHeader) + sizeof(struct CommandMessage)+ username.length()+sizeof(struct SUCMSClientGetResult);
 
       std::string data;
-      std::vector<void*> segments;
+      std::vector<std::string> segments;
       message_number = 0;
-      for (int i = 0; i < 5; i++) {
-        result.result_id = htons(id);
+
+      for (int i = 0; i < message_count; i++) {
         result.message_number = htons(i);
+        result.result_id = htons(id);
 
         //Send SUCMSHeader + CommandMessage + username + SUCMSClientGetResult
         build_command_message(COMMAND_CLIENT_GET_RESULT, buf, username, password, msg_size - sizeof(SUCMSHeader));
@@ -256,30 +252,32 @@ int main(int argc, char *argv[]) {
         ret = recvfrom(udp_socket, buf, MAX_SEGMENT_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_len);
         parse_response_header(buf, &response_type, &response_length, 0);
 
-        //Check if received the correct amount, clean up and exit if not.
-        if (ret != response_length+sizeof(SUCMSHeader)) {
-          std::cerr << "Received " << ret << " instead of " << response_length+sizeof(SUCMSHeader) << "."  << std::endl;
-          std::cerr << strerror(errno) << std::endl;
-          close(udp_socket);
-          return 1;
-        }
 
         if (response_type == MSG_FILE_DATA) {
-          segments.push_back(buf);
+          //Check if received the correct amount, clean up and exit if not.
+          if (ret != response_length+sizeof(SUCMSHeader)) {
+            std::cerr << "Received " << ret << " instead of " << response_length+sizeof(SUCMSHeader) << "."  << std::endl;
+            std::cerr << strerror(errno) << std::endl;
+            close(udp_socket);
+            return 1;
+          }
+
           parse_file_data(buf, &id, &message_number, &file_bytes, &bytes_offset, sizeof(SUCMSHeader));
 
-          std::string file_data = std::string(&buf[bytes_offset+12], &buf[bytes_offset+file_bytes+12]);
-          data.append(file_data);
+          int index = bytes_offset;
+          while (index < ret) {
+            std::cout << buf[index];
+            index++;
+          }
+
         } else {
           std::cout << "Something went very very wrong :(\n";
           std::cout << "Response Type: " << response_type << std::endl;
           parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(SUCMSHeader));
           std::cout << "Response Code: " << response_code << std::endl;
         }
-
+        std::cout << std::endl;
       }
-
-      std::cout << data << std::endl;
 
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
@@ -291,8 +289,6 @@ int main(int argc, char *argv[]) {
       std::cout << "Received INVALID_RESULT_ID from server.\n";
     } else if (response_code == INVALID_CLIENT_MESSAGE) {
       std::cout << "Received INVALID_CLIENT_MESSAGE from server.\n";
-    } else if (response_code == ACCESS_DENIED) {
-
     } else {
       std::cout << "Something went very very wrong :(\n";
       std::cout << "Response Code: " << response_code << std::endl;
