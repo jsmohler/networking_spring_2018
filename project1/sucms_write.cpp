@@ -18,7 +18,7 @@
 
 #include "SUCMS.h"
 
-int build_command_message(int command, char* buf, std::string username, unsigned char* password, int size) {
+int build_command_message(uint16_t command, char* buf, std::string username, unsigned char* password, uint16_t size) {
   //Build SUCMS Header + COMMAND_LIST + username
   struct SUCMSHeader header;
   struct CommandMessage list_command;
@@ -39,9 +39,12 @@ int build_command_message(int command, char* buf, std::string username, unsigned
   return 0;
 }
 
-int build_segment(char* buf, std::string username, uint16_t id, uint16_t filesize, uint16_t number, uint32_t offset, unsigned char* password) {
+int build_segment(char* buf, std::string username, uint16_t id, uint16_t filesize, uint16_t number, uint32_t offset, unsigned char* password, uint16_t size) {
   //Build SUCMS Header + COMMAND_LIST + username
   struct SUCMSHeader header;
+  header.sucms_msg_type = htons(MSG_FILE_DATA);
+  header.sucms_msg_length = htons(size);
+
   struct SUCMSClientFileData file_data;
   file_data.username_len = htons(username.length());
   file_data.result_id = htons(id);
@@ -49,7 +52,7 @@ int build_segment(char* buf, std::string username, uint16_t id, uint16_t filesiz
   file_data.message_number = htons(number);
   file_data.filedata_offset = htonl(offset);
 
-  for(int i = 0; i < 16; i++) {
+  for(int i = 0; i < 32; i++) {
     file_data.password_hash[i] = password[i];
   }
 
@@ -83,18 +86,18 @@ int parse_command_response(char* buf, uint16_t *response_code, uint16_t *id, uin
   return 0;
 }
 
-int parse_file_data(char* buf, uint16_t *id, uint16_t *number, uint16_t *file_bytes, uint32_t *bytes_offset, int index){
-  memcpy(id, &buf[index], 2);
-  *id = ntohs(*id);
+int parse_file_data_response(char* buf, uint16_t *type, uint16_t *id, uint16_t *number, uint16_t *unused, int index){
+  memcpy(type, &buf[index], 2);
+  *type = ntohs(*type);
 
   memcpy(number, &buf[index+2], 2);
   *number = ntohs(*number);
 
-  memcpy(file_bytes, &buf[index+4], 2);
-  *file_bytes = ntohs(*file_bytes);
+  memcpy(id, &buf[index+4], 2);
+  *id = ntohs(*id);
 
-  memcpy(bytes_offset, &buf[index+6], 4);
-  *bytes_offset = ntohl(*bytes_offset);
+  memcpy(unused, &buf[index+6], 2);
+  *unused = ntohs(*unused);
 }
 
 int main(int argc, char *argv[]) {
@@ -119,7 +122,7 @@ int main(int argc, char *argv[]) {
 
   // Note: this needs to be 3, because the program name counts as an argument!
   if (argc < 3) {
-    std::cerr << "Please specify IP PORT USERNAME PASSWORD as first four arguments." << std::endl;
+    std::cerr << "Please specify IP PORT as first two arguments." << std::endl;
     return 1;
   }
   // Set up variables "aliases"
@@ -193,26 +196,25 @@ int main(int argc, char *argv[]) {
 
   MD5((const unsigned char*) pswd.c_str(), pswd.length(), password);
   int msg_size = sizeof(struct SUCMSHeader) + sizeof(struct CommandMessage)+ username.length()+filename.length()+sizeof(struct SUCMSFileInfo);
-  build_command_message(COMMAND_CREATE, buf, username, password, msg_size-sizeof(SUCMSHeader));
+  build_command_message(COMMAND_CREATE, buf, username, password, msg_size-(sizeof(struct SUCMSHeader)));
 
   //Read in portions of file
   std::ifstream file (filename.c_str());
   file.seekg(0, file.end);
-  int file_len = file.tellg();
+  uint32_t file_len = file.tellg();
   file.seekg(0, file.beg);
 
   std::cout << "File length: " << file_len << std::endl;
 
   //Send SUCMS Header + COMMAND_READ + username + SUCMSFileInfo + filename
   struct SUCMSFileInfo write_request;
-  write_request.filesize_bytes = file_len;
-  write_request.filename_len = filename.length();
+  write_request.filesize_bytes = htonl(file_len);
+  write_request.filename_len = htons(filename.length());
 
   int total = ceil(file_len/(MAX_SEGMENT_SIZE - sizeof(SUCMSHeader) - sizeof(SUCMSClientFileData) - username.length()));
-  std::cout << "total: " << total << std::endl;
-  write_request.total_pieces = total+1;
+  write_request.total_pieces = htons(total+1);
 
-  memcpy(&buf[msg_size-sizeof(write_request)-filename.length()], &write_request, sizeof(write_request));
+  memcpy(&buf[msg_size -(sizeof(struct SUCMSFileInfo))-filename.length()], &write_request, sizeof(struct SUCMSFileInfo));
   memcpy(&buf[msg_size-filename.length()], filename.c_str(), filename.length());
   ret = sendto(udp_socket, &buf, msg_size, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 
@@ -236,6 +238,10 @@ int main(int argc, char *argv[]) {
   uint16_t id;
   uint32_t data_size;
   uint16_t message_count;
+  uint16_t filedata_response_type;
+  uint16_t message_number;
+  uint16_t unused;
+
 
   parse_response_header(buf, &response_type, &response_length, 0);
 
@@ -255,25 +261,54 @@ int main(int argc, char *argv[]) {
   }
   seg_lengths.push_back(file_len - (total*max_data_length));
 
-  for (int i = 0; i < seg_lengths.size(); i++) {
-    std::cout << "Segment " << i << " length is: " << seg_lengths[i] << std::endl;
-  }
-
-  int chunk_length = file_len / total;
-  //std::cout << chunk_length << std::endl;
-  msg_size = sizeof(struct SUCMSHeader) + sizeof(struct SUCMSClientFileData) + username.length()+chunk_length;
   if (response_type == MSG_COMMAND_RESPONSE) {
     parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
     if (response_code == AUTH_OK){
+      uint32_t offset = 0;
+      int cur_len;
+      for (int i = 0; i < seg_lengths.size(); i++) {
+        cur_len = seg_lengths[i];
+        msg_size = overhead+cur_len;
+        //Send SUCMSHeader + SUCMSClientFileData + username + filedata
+        build_segment(buf, username.c_str(), id, cur_len, i, offset, password, msg_size-sizeof(SUCMSHeader));
+        offset += cur_len;
+        char* segment_data = new char[cur_len];
+        file.read(segment_data, cur_len);
+        memcpy(&buf[overhead], segment_data, cur_len);
 
-      for (int i = 0; i < total; i++) {
-        //Send SUCMSHeader + SUCMSClientFileData + username
-        build_segment(buf, username.c_str(), id, chunk_length, i, (i*msg_size), password);
+        ret = sendto(udp_socket, &buf, overhead+cur_len, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 
-        std::cout << "Segment build.\n";
+        // Check if sent the correct amount, clean up and exit if not.
+        if (ret != overhead+cur_len) {
+          std::cerr << "Sent " << ret << " instead of " << overhead+cur_len << "."  << std::endl;
+          std::cerr << strerror(errno) << std::endl;
+          close(udp_socket);
+          return 1;
+        }
+
+        ret = recvfrom(udp_socket, buf, MAX_SEGMENT_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_len);
+
+        parse_response_header(buf, &response_type, &response_length, 0);
+
+        //Check if received the correct amount, clean up and exit if not.
+        if (ret != response_length+sizeof(SUCMSHeader)) {
+          std::cerr << "Received " << ret << " instead of " << response_length+sizeof(SUCMSHeader) << "."  << std::endl;
+          std::cerr << strerror(errno) << std::endl;
+          close(udp_socket);
+          return 1;
+        }
+
+        parse_file_data_response(buf,&filedata_response_type, &id, &message_number, &unused, sizeof(SUCMSHeader));
+
+
+        if (response_type != MSG_FILE_DATA_RESPONSE) {
+          std::cout << "Response type: " << response_type << std::endl;
+          std::cout << "Response code: " << filedata_response_type << std::endl;
+          close(udp_socket);
+          return 1;
+        }
 
       }
-
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
     } else if (response_code == NO_SUCH_FILE) {
@@ -286,7 +321,7 @@ int main(int argc, char *argv[]) {
     file.close();
   } else {
     std::cout << "Something went very very wrong :(\n";
-    std::cout << "Response Type A: " << response_type << std::endl;
+    std::cout << "Response Type: " << response_type << std::endl;
   }
 
 }
