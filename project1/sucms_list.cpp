@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <openssl/md5.h>
+#include<netdb.h> //hostent
 
 #include "SUCMS.h"
 
@@ -52,7 +53,7 @@ int parse_command_response(char* buf, uint16_t *response_code, uint16_t *id, uin
   *id = ntohs(*id);
 
   memcpy(data_size, &buf[index+4], 4);
-  *data_size = ntohs(*data_size);
+  *data_size = ntohl(*data_size);
 
   memcpy(message_count, &buf[index+8], 2);
   *message_count = ntohs(*message_count);
@@ -76,7 +77,7 @@ int parse_file_info(char* buf, uint16_t *filename_len, uint16_t *total_pieces, u
   *total_pieces = ntohs(*total_pieces);
 
   memcpy(filesize_bytes, &buf[index+4], 4);
-  *filesize_bytes = ntohs(*filesize_bytes);
+  *filesize_bytes = ntohl(*filesize_bytes);
 
   return 0;
 }
@@ -126,7 +127,16 @@ int main(int argc, char *argv[]) {
   // equivalent required for using the address in code.
   // Note that because dest_addr is a sockaddr_in (again, IPv4) the 'sin_addr'
   // member of the struct is used for the IP
-  ret = inet_pton(AF_INET, ip_string, (void *)&dest_addr.sin_addr);
+  int  **ppaddr;
+  struct sockaddr_in sockAddr;
+  std::string addr;
+
+  hostent *h = gethostbyname(ip_string);
+  ppaddr = (int**)h->h_addr_list;
+  sockAddr.sin_addr.s_addr = **ppaddr;
+  addr = inet_ntoa(sockAddr.sin_addr);  //this is your ip address
+
+  ret = inet_pton(AF_INET, addr.c_str(), (void *)&dest_addr.sin_addr);
 
   // Check whether the specified IP was parsed properly. If not, exit.
   if (ret == -1) {
@@ -156,10 +166,10 @@ int main(int argc, char *argv[]) {
 
   //username and password
   std::string username;
-  std::cout << "Enter a username: \n";
+  //std::cout << "Enter a username: \n";
   std::cin >> username;
   std::string pswd = argv[4];
-  std::cout << "Enter a password: \n";
+  //std::cout << "Enter a password: \n";
   std::cin >> pswd;
   unsigned char password[16];
 
@@ -201,7 +211,6 @@ int main(int argc, char *argv[]) {
     parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
 
     //Check if received the correct amount, clean up and exit if not.
-    std::cout << response_length <<std::endl;
     if (ret != response_length) {
       std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
       std::cerr << strerror(errno) << std::endl;
@@ -237,38 +246,39 @@ int main(int argc, char *argv[]) {
         return 1;
       }
 
-      //Receive response SUCMSHeader + SUCMSFileListResult + [SUCMSFileInfo + filename]
-      ret = recvfrom(udp_socket, buf, MAX_SEGMENT_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_len);
-      parse_response_header(buf, &response_type, &response_length, 0);
+      for (int m = 0; m < message_count; m++) {
+        //Receive response SUCMSHeader + SUCMSFileListResult + [SUCMSFileInfo + filename]
+        ret = recvfrom(udp_socket, buf, MAX_SEGMENT_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_addr_len);
+        parse_response_header(buf, &response_type, &response_length, 0);
 
-      //Check if received the correct amount, clean up and exit if not.
-      if (ret != response_length+sizeof(SUCMSHeader)) {
-        std::cerr << "Received " << ret << " instead of " << response_length+sizeof(SUCMSHeader) << "."  << std::endl;
-        std::cerr << strerror(errno) << std::endl;
-        close(udp_socket);
-        return 1;
-      }
-
-      if (response_type == MSG_LIST_RESPONSE) {
-        parse_list_result(buf, &id, &message_number, sizeof(struct SUCMSHeader));
-
-        int index = sizeof(struct SUCMSHeader)+sizeof(struct SUCMSFileListResult);
-        while (index < response_length) {
-          parse_file_info(buf, &filename_len, &total_pieces, &filesize_bytes, index);
-
-          char filename[filename_len];
-          memcpy(filename, &buf[index+sizeof(SUCMSFileInfo)], filename_len);
-          filename[filename_len] = '\0';
-
-          //Print in format File list entry: test.txt of size 28 bytes.
-          std::cout << "File list entry: " << filename << " of size " << filesize_bytes << " bytes." << std::endl;
-          index = index + sizeof(struct SUCMSFileInfo) + filename_len;
+        //Check if received the correct amount, clean up and exit if not.
+        if (ret != response_length+sizeof(SUCMSHeader)) {
+          std::cerr << "Received " << ret << " instead of " << response_length+sizeof(SUCMSHeader) << "."  << std::endl;
+          std::cerr << strerror(errno) << std::endl;
+          close(udp_socket);
+          return 1;
         }
-      } else if (response_type == MSG_COMMAND_RESPONSE) {
-        parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
-        std::cout << "Response code: " << response_code << std::endl;
-      }
 
+        if (response_type == MSG_LIST_RESPONSE) {
+          parse_list_result(buf, &id, &message_number, sizeof(struct SUCMSHeader));
+
+          int index = sizeof(struct SUCMSHeader)+sizeof(struct SUCMSFileListResult);
+          while (index < response_length) {
+            parse_file_info(buf, &filename_len, &total_pieces, &filesize_bytes, index);
+
+            char filename[filename_len];
+            memcpy(filename, &buf[index+sizeof(SUCMSFileInfo)], filename_len);
+            filename[filename_len] = '\0';
+
+            //Print in format File list entry: test.txt of size 28 bytes.
+            std::cout << "File list entry: " << filename << " of size " << filesize_bytes << " bytes." << std::endl;
+            index = index + sizeof(struct SUCMSFileInfo) + filename_len;
+          }
+        } else if (response_type == MSG_COMMAND_RESPONSE) {
+          parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
+          std::cout << "Response code: " << response_code << std::endl;
+        }
+      }
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
     } else  {

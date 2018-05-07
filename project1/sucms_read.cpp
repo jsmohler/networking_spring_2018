@@ -12,6 +12,12 @@
 #include <stdlib.h>
 #include <openssl/md5.h>
 #include <vector>
+#include <iostream>
+#include <iterator>
+#include <exception>
+#include <algorithm>
+#include <iomanip>
+#include<netdb.h> //hostent
 
 #include "SUCMS.h"
 
@@ -53,7 +59,7 @@ int parse_command_response(char* buf, uint16_t *response_code, uint16_t *id, uin
   *id = ntohs(*id);
 
   memcpy(data_size, &buf[index+4], 4);
-  *data_size = ntohs(*data_size);
+  *data_size = ntohl(*data_size);
 
   memcpy(message_count, &buf[index+8], 2);
   *message_count = ntohs(*message_count);
@@ -71,7 +77,7 @@ int parse_file_data(char* buf, uint16_t *id, uint16_t *number, uint16_t *file_by
   *file_bytes = ntohs(*file_bytes);
 
   memcpy(bytes_offset, &buf[index+6], 4);
-  *bytes_offset = ntohs(*bytes_offset);
+  *bytes_offset = ntohl(*bytes_offset);
 }
 
 int main(int argc, char *argv[]) {
@@ -96,7 +102,7 @@ int main(int argc, char *argv[]) {
 
   // Note: this needs to be 3, because the program name counts as an argument!
   if (argc < 3) {
-    std::cerr << "Please specify IP PORT USERNAME PASSWORD as first four arguments." << std::endl;
+    std::cerr << "Please specify URL PORT as first two arguments." << std::endl;
     return 1;
   }
   // Set up variables "aliases"
@@ -119,7 +125,16 @@ int main(int argc, char *argv[]) {
   // equivalent required for using the address in code.
   // Note that because dest_addr is a sockaddr_in (again, IPv4) the 'sin_addr'
   // member of the struct is used for the IP
-  ret = inet_pton(AF_INET, ip_string, (void *)&dest_addr.sin_addr);
+	int  **ppaddr;
+	struct sockaddr_in sockAddr;
+	std::string addr;
+
+  hostent *h = gethostbyname(ip_string);
+	ppaddr = (int**)h->h_addr_list;
+	sockAddr.sin_addr.s_addr = **ppaddr;
+	addr = inet_ntoa(sockAddr.sin_addr);  //this is your ip address
+
+  ret = inet_pton(AF_INET, addr.c_str(), (void *)&dest_addr.sin_addr);
 
   // Check whether the specified IP was parsed properly. If not, exit.
   if (ret == -1) {
@@ -149,13 +164,13 @@ int main(int argc, char *argv[]) {
 
   //username and password
   std::string username;
-  std::cout << "Enter a username: \n";
+  //std::cout << "Enter a username: \n";
   std::cin >> username;
   std::string pswd = argv[4];
-  std::cout << "Enter a password: \n";
+  //std::cout << "Enter a password: \n";
   std::cin >> pswd;
   std::string filename;
-  std::cout << "Enter a filepath: \n";
+  //std::cout << "Enter a filepath: \n";
   std::cin >> filename;
   unsigned char password[16];
 
@@ -169,7 +184,7 @@ int main(int argc, char *argv[]) {
   read_request.result_id = 0;
   read_request.filesize_bytes = 0;
 
-  memcpy(&buf[msg_size-sizeof(read_request)-filename.length()], &read_request, 8);
+  memcpy(&buf[msg_size-sizeof(read_request)-filename.length()], &read_request, sizeof(read_request));
   memcpy(&buf[msg_size-filename.length()], filename.c_str(), filename.length());
   ret = sendto(udp_socket, &buf, msg_size, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 
@@ -253,7 +268,7 @@ int main(int argc, char *argv[]) {
           segments.push_back(buf);
           parse_file_data(buf, &id, &message_number, &file_bytes, &bytes_offset, sizeof(SUCMSHeader));
 
-          std::string file_data = std::string(&buf[bytes_offset+10], &buf[bytes_offset+file_bytes+20]);
+          std::string file_data = std::string(&buf[bytes_offset+12], &buf[bytes_offset+file_bytes+12]);
           data.append(file_data);
         } else {
           std::cout << "Something went very very wrong :(\n";
@@ -264,12 +279,20 @@ int main(int argc, char *argv[]) {
 
       }
 
-      std::cout << "Data: " << data << std::endl;
+      std::cout << data << std::endl;
 
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
     } else if (response_code == NO_SUCH_FILE) {
       std::cout << "Received NO_SUCH_FILE from server.\n";
+    } else if (response_code == ACCESS_DENIED) {
+      std::cout << "Received ACCESS_DENIED from server.\n";
+    } else if (response_code == INVALID_RESULT_ID) {
+      std::cout << "Received INVALID_RESULT_ID from server.\n";
+    } else if (response_code == INVALID_CLIENT_MESSAGE) {
+      std::cout << "Received INVALID_CLIENT_MESSAGE from server.\n";
+    } else if (response_code == ACCESS_DENIED) {
+
     } else {
       std::cout << "Something went very very wrong :(\n";
       std::cout << "Response Code: " << response_code << std::endl;
