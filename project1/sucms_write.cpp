@@ -19,7 +19,7 @@
 #include "SUCMS.h"
 
 int build_command_message(uint16_t command, char* buf, std::string username, unsigned char* password, uint16_t size) {
-  //Build SUCMS Header + COMMAND_LIST + username
+  //Build SUCMS Header + COMMAND_WRITE + username
   struct SUCMSHeader header;
   struct CommandMessage list_command;
 
@@ -40,7 +40,7 @@ int build_command_message(uint16_t command, char* buf, std::string username, uns
 }
 
 int build_segment(char* buf, std::string username, uint16_t id, uint16_t filesize, uint16_t number, uint32_t offset, unsigned char* password, uint16_t size) {
-  //Build SUCMS Header + COMMAND_LIST + username
+  //Build SUCMS Header + COMMAND_WRITE + username
   struct SUCMSHeader header;
   header.sucms_msg_type = htons(MSG_FILE_DATA);
   header.sucms_msg_length = htons(size);
@@ -141,10 +141,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // inet_pton converts an ip address string (e.g., 1.2.3.4) into the 4 byte
+  // convert host url to ip address
+  // then convert ip address string (e.g., 1.2.3.4) into the 4 byte
   // equivalent required for using the address in code.
-  // Note that because dest_addr is a sockaddr_in (again, IPv4) the 'sin_addr'
-  // member of the struct is used for the IP
   int  **ppaddr;
 	struct sockaddr_in sockAddr;
 	std::string addr;
@@ -184,13 +183,10 @@ int main(int argc, char *argv[]) {
 
   //username and password
   std::string username;
-  std::cout << "Enter a username: \n";
   std::cin >> username;
   std::string pswd = argv[4];
-  std::cout << "Enter a password: \n";
   std::cin >> pswd;
   std::string filename;
-  std::cout << "Enter a filename: \n";
   std::cin >> filename;
   unsigned char password[16];
 
@@ -200,11 +196,16 @@ int main(int argc, char *argv[]) {
 
   //Read in portions of file
   std::ifstream file (filename.c_str());
-  file.seekg(0, file.end);
-  uint32_t file_len = file.tellg();
-  file.seekg(0, file.beg);
-
-  std::cout << "File length: " << file_len << std::endl;
+  uint32_t file_len = 0;
+  if (file.is_open()) {
+    file.seekg(0, file.end);
+    file_len = file.tellg();
+    file.seekg(0, file.beg);
+  } else {
+    std::cerr << "File does not exist." << std::endl;
+    close(udp_socket);
+    return 1;
+  }
 
   //Send SUCMS Header + COMMAND_READ + username + SUCMSFileInfo + filename
   struct SUCMSFileInfo write_request;
@@ -299,8 +300,6 @@ int main(int argc, char *argv[]) {
         }
 
         parse_file_data_response(buf,&filedata_response_type, &id, &message_number, &unused, sizeof(SUCMSHeader));
-
-
         if (response_type != MSG_FILE_DATA_RESPONSE) {
           std::cout << "Response type: " << response_type << std::endl;
           std::cout << "Response code: " << filedata_response_type << std::endl;
@@ -308,17 +307,41 @@ int main(int argc, char *argv[]) {
           return 1;
         }
 
+        if (filedata_response_type != FILEDATA_OK) {
+          if (filedata_response_type == FILEDATA_AUTH_FAILED) {
+            std::cout << "Received FILEDATA_AUTH_FAILED from server.\n";
+          } else if (filedata_response_type == FILEDATA_INVALID_RESULT_ID) {
+            std::cout << "Received FILEDATA_INVALID_RESULT_ID from server.\n";
+          } else if (filedata_response_type == FILEDATA_INVALID_CHUNK) {
+            std::cout << "Received FILE_DATA_INVALID_CHUNK from server.\n";
+          } else if (filedata_response_type == FILEDATA_SERVER_ERROR) {
+            std::cout << "Received FILE_DATA_SERVER_ERROR from server.\n";
+          } else if (filedata_response_type == FILEDATA_INVALID_CLIENT_MESSAGE) {
+            std::cout << "Received FILE_DATA_INVALID_CLIENT_MESSAGE from server.\n";
+          } else {
+            std::cout << "Something went very very wrong :(\n";
+            std::cout << "Response Code: " << filedata_response_type << std::endl;
+          }
+        }
       }
+
+      std::cout << "SEND_COMPLETE.\n";
+      file.close();
+
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
     } else if (response_code == NO_SUCH_FILE) {
       std::cout << "Received NO_SUCH_FILE from server.\n";
+    } else if (response_code == ACCESS_DENIED) {
+      std::cout << "Received ACCESS_DENIED from server.\n";
+    } else if (response_code == INVALID_RESULT_ID) {
+      std::cout << "Received INVALID_RESULT_ID from server.\n";
+    } else if (response_code == INVALID_CLIENT_MESSAGE) {
+      std::cout << "Received INVALID_CLIENT_MESSAGE from server.\n";
     } else {
       std::cout << "Something went very very wrong :(\n";
       std::cout << "Response Code: " << response_code << std::endl;
     }
-
-    file.close();
   } else {
     std::cout << "Something went very very wrong :(\n";
     std::cout << "Response Type: " << response_type << std::endl;

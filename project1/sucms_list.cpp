@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
 
   // Note: this needs to be 3, because the program name counts as an argument!
   if (argc < 3) {
-    std::cerr << "Please specify IP PORT USERNAME PASSWORD as first four arguments." << std::endl;
+    std::cerr << "Please specify IP PORT as first two arguments." << std::endl;
     return 1;
   }
   // Set up variables "aliases"
@@ -123,10 +123,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // inet_pton converts an ip address string (e.g., 1.2.3.4) into the 4 byte
-  // equivalent required for using the address in code.
-  // Note that because dest_addr is a sockaddr_in (again, IPv4) the 'sin_addr'
-  // member of the struct is used for the IP
+  // convert host url to an ip address
+  // then converts that ip address string (e.g., 1.2.3.4) into the 4 byte
   int  **ppaddr;
   struct sockaddr_in sockAddr;
   std::string addr;
@@ -166,10 +164,8 @@ int main(int argc, char *argv[]) {
 
   //username and password
   std::string username;
-  //std::cout << "Enter a username: \n";
   std::cin >> username;
   std::string pswd = argv[4];
-  //std::cout << "Enter a password: \n";
   std::cin >> pswd;
   unsigned char password[16];
 
@@ -226,16 +222,11 @@ int main(int argc, char *argv[]) {
 
       msg_size+= sizeof(result);
 
-      //Send SUCMSHeader + CommandMessage + username + SUCMSClientGetResult
+      //Prepare SUCMSHeader + CommandMessage + username + SUCMSClientGetResult
       build_command_message(COMMAND_CLIENT_GET_RESULT, buf, username, password, msg_size - sizeof(SUCMSHeader));
-
       memcpy(&buf[msg_size-sizeof(result)], &result, sizeof(result));
 
-      // uint16_t test;
-      // memcpy(&test, &buf[sizeof(struct SUCMSHeader)+2], 2);
-      // std::cout << "Send command: " << ntohs(test) << std::endl;
-
-      //Send SUCMS Header + COMMAND_LIST + username + SUCMSClientMessage
+      //Send SUCMS Header + COMMAND_LIST + username + SUCMSClientGetResult
       ret = sendto(udp_socket, &buf, msg_size, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 
       // Check if sent the correct amount, clean up and exit if not.
@@ -274,7 +265,7 @@ int main(int argc, char *argv[]) {
             std::cout << "File list entry: " << filename << " of size " << filesize_bytes << " bytes." << std::endl;
             index = index + sizeof(struct SUCMSFileInfo) + filename_len;
           }
-        } else if (response_type == MSG_COMMAND_RESPONSE) {
+        } else {
           parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
           std::cout << "Response code: " << response_code << std::endl;
         }

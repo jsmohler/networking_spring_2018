@@ -18,7 +18,7 @@
 #include "SUCMS.h"
 
 int build_command_message(int command, char* buf, std::string username, unsigned char* password, int size) {
-  //Build SUCMS Header + COMMAND_LIST + username
+  //Build SUCMS Header + COMMAND_READ + username
   struct SUCMSHeader header;
   struct CommandMessage list_command;
 
@@ -98,7 +98,7 @@ int main(int argc, char *argv[]) {
 
   // Note: this needs to be 3, because the program name counts as an argument!
   if (argc < 3) {
-    std::cerr << "Please specify IP PORT USERNAME PASSWORD as first four arguments." << std::endl;
+    std::cerr << "Please specify IP PORT as first two arguments." << std::endl;
     return 1;
   }
   // Set up variables "aliases"
@@ -117,10 +117,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // inet_pton converts an ip address string (e.g., 1.2.3.4) into the 4 byte
+  // convert host url to an ip address
+  // then converts an ip address string (e.g., 1.2.3.4) into the 4 byte
   // equivalent required for using the address in code.
-  // Note that because dest_addr is a sockaddr_in (again, IPv4) the 'sin_addr'
-  // member of the struct is used for the IP
   int  **ppaddr;
 	struct sockaddr_in sockAddr;
 	std::string addr;
@@ -160,13 +159,10 @@ int main(int argc, char *argv[]) {
 
   //username and password
   std::string username;
-  //std::cout << "Enter a username: \n";
   std::cin >> username;
   std::string pswd = argv[4];
-  //std::cout << "Enter a password: \n";
   std::cin >> pswd;
   std::string filename;
-  //std::cout << "Enter a filepath: \n";
   std::cin >> filename;
   unsigned char password[16];
 
@@ -229,7 +225,7 @@ int main(int argc, char *argv[]) {
       std::vector<std::string> segments;
       message_number = 0;
 
-      //Make output filepath
+      //Make output file
       std::ofstream file;
       file.open(filename.c_str(), std::ios::out);
 
@@ -237,12 +233,11 @@ int main(int argc, char *argv[]) {
         result.message_number = htons(i);
         result.result_id = htons(id);
 
-        //Send SUCMSHeader + CommandMessage + username + SUCMSClientGetResult
+        //Make SUCMSHeader + CommandMessage + username + SUCMSClientGetResult
         build_command_message(COMMAND_CLIENT_GET_RESULT, buf, username, password, msg_size - sizeof(SUCMSHeader));
-
         memcpy(&buf[msg_size-sizeof(result)], &result, sizeof(result));
 
-        //Send SUCMS Header + COMMAND_LIST + username + SUCMSClientMessage
+        //Send SUCMS Header + COMMAND_READ + username + SUCMSClientGetResult
         ret = sendto(udp_socket, &buf, msg_size, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 
         // Check if sent the correct amount, clean up and exit if not.
@@ -283,7 +278,8 @@ int main(int argc, char *argv[]) {
           std::cout << "Response Code: " << response_code << std::endl;
         }
       }
-      file.close();// closes file; always do this when you are done using the file
+      std::cout << "READ_COMPLETE\n";      
+      file.close();
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
     } else if (response_code == NO_SUCH_FILE) {

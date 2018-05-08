@@ -17,7 +17,7 @@
 #include "SUCMS.h"
 
 int build_command_message(int command, char* buf, std::string username, unsigned char* password, int size) {
-  //Build SUCMS Header + COMMAND_LIST + username
+  //Build SUCMS Header + COMMAND_DELETE + username
   struct SUCMSHeader header;
   struct CommandMessage list_command;
 
@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
 
   // Note: this needs to be 3, because the program name counts as an argument!
   if (argc < 3) {
-    std::cerr << "Please specify IP PORT USERNAME PASSWORD as first four arguments." << std::endl;
+    std::cerr << "Please specify IP PORT as first two arguments." << std::endl;
     return 1;
   }
   // Set up variables "aliases"
@@ -102,10 +102,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // inet_pton converts an ip address string (e.g., 1.2.3.4) into the 4 byte
+  // convert host url to ip address
+  // then convert an ip address string (e.g., 1.2.3.4) into the 4 byte
   // equivalent required for using the address in code.
-  // Note that because dest_addr is a sockaddr_in (again, IPv4) the 'sin_addr'
-  // member of the struct is used for the IP
   int  **ppaddr;
 	struct sockaddr_in sockAddr;
 	std::string addr;
@@ -145,13 +144,10 @@ int main(int argc, char *argv[]) {
 
   //username and password
   std::string username;
-  //std::cout << "Enter a username: \n";
   std::cin >> username;
   std::string pswd = argv[4];
-  //std::cout << "Enter a password: \n";
   std::cin >> pswd;
   std::string filename;
-  //std::cout << "Enter a filepath: \n";
   std::cin >> filename;
   unsigned char password[16];
 
@@ -203,7 +199,7 @@ int main(int argc, char *argv[]) {
   if (response_type == MSG_COMMAND_RESPONSE) {
       parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
     if (response_code == AUTH_OK) {
-      std::cout << "Received FILE_DELETED from server.\n";
+      std::cout << "FILE_DELETED.\n";
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
     } else if (response_code == NO_SUCH_FILE) {
