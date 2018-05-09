@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
   read_request.result_id = 0;
   read_request.filesize_bytes = 0;
 
-  memcpy(&buf[msg_size-sizeof(read_request)-filename.length()], &read_request, 8);
+  memcpy(&buf[msg_size-sizeof(read_request)-filename.length()], &read_request, sizeof(read_request));
   memcpy(&buf[msg_size-filename.length()], filename.c_str(), filename.length());
   ret = sendto(udp_socket, &buf, msg_size, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
 
@@ -265,7 +265,7 @@ int main(int argc, char *argv[]) {
           parse_file_data(buf, &id, &message_number, &file_bytes, &bytes_offset, sizeof(SUCMSHeader));
 
           //write data to file
-          int index = 14;
+          int index = sizeof(SUCMSHeader) + sizeof(SUCMSFileDataResult);
           while (index < ret) {
             file << buf[index];
             index++;
@@ -278,7 +278,7 @@ int main(int argc, char *argv[]) {
           std::cout << "Response Code: " << response_code << std::endl;
         }
       }
-      std::cout << "READ_COMPLETE\n";      
+      std::cout << "READ_COMPLETE\n";
       file.close();
     } else if (response_code == AUTH_FAILED) {
       std::cout << "Received AUTH_FAILED from server.\n";
