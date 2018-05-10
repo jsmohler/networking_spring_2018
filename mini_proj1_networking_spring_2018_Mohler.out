@@ -1,7 +1,11 @@
 Make successful
 Ran udpclient successfully!
 Ran udpclient successfully!
-Binary files student.out.2 and /u/home/natevans/simple_udp_client/mini_proj1_expected_output_2.txt differ
+Binary files student.out.2 and /home/nate/Documents/du_stuff/computer_networking_spring_2018/code_examples/simple_udp_client/mini_proj1_expected_output_2.txt differ
 Output of program incorrect
+Received ECHO response from server. Secret was 3333
+Echoed string was: blergh
+student.out.2: 12 words  12 100% common  0 0% deleted  0 0% changed
+/home/nate/Documents/du_stuff/computer_networking_spring_2018/code_examples/simple_udp_client/mini_proj1_expected_output_2.txt: 12 words  12 100% common  0 0% inserted  0 0% changed
 Ran udpclient successfully!
 jormohle/networking_spring_2018_Mohler Score 16 out of a possible 20
