@@ -145,13 +145,13 @@ int main(int argc, char *argv[]) {
   // then convert ip address string (e.g., 1.2.3.4) into the 4 byte
   // equivalent required for using the address in code.
   int  **ppaddr;
-	struct sockaddr_in sockAddr;
-	std::string addr;
+  struct sockaddr_in sockAddr;
+  std::string addr;
 
   hostent *h = gethostbyname(ip_string);
-	ppaddr = (int**)h->h_addr_list;
-	sockAddr.sin_addr.s_addr = **ppaddr;
-	addr = inet_ntoa(sockAddr.sin_addr);  //this is your ip address
+  ppaddr = (int**)h->h_addr_list;
+  sockAddr.sin_addr.s_addr = **ppaddr;
+  addr = inet_ntoa(sockAddr.sin_addr);  //this is your ip address
 
   ret = inet_pton(AF_INET, addr.c_str(), (void *)&dest_addr.sin_addr);
 
@@ -246,14 +246,6 @@ int main(int argc, char *argv[]) {
 
   parse_response_header(buf, &response_type, &response_length, 0);
 
-  //Check if received the correct amount, clean up and exit if not.
-  if (ret != response_length) {
-    std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
-    std::cerr << strerror(errno) << std::endl;
-    close(udp_socket);
-    return 1;
-  }
-
   std::vector<uint16_t> seg_lengths;
   int overhead = sizeof(SUCMSHeader) + sizeof(SUCMSClientFileData) + username.length();
   int max_data_length = MAX_SEGMENT_SIZE - overhead;
@@ -265,6 +257,16 @@ int main(int argc, char *argv[]) {
   if (response_type == MSG_COMMAND_RESPONSE) {
     parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
     if (response_code == AUTH_OK){
+
+      //Check if received the correct amount, clean up and exit if not.
+      if (ret != response_length) {
+        std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
+        std::cerr << strerror(errno) << std::endl;
+        close(udp_socket);
+        return 1;
+      }
+
+
       uint32_t offset = 0;
       int cur_len;
       for (int i = 0; i < seg_lengths.size(); i++) {
