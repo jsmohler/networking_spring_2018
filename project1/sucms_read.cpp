@@ -208,7 +208,6 @@ int main(int argc, char *argv[]) {
 
   //Check if received the correct amount, clean up and exit if not.
   if (ret != sizeof(SUCMSHeader)+sizeof(CommandResponse)) {
-	std::cout << "Hi!\n";
     std::cerr << "Received " << ret << " instead of " << sizeof(SUCMSHeader)+sizeof(CommandResponse) << "."  << std::endl;
     std::cerr << strerror(errno) << std::endl;
     close(udp_socket);
