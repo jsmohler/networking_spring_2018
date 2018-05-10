@@ -206,15 +206,15 @@ int main(int argc, char *argv[]) {
   if (response_type == MSG_COMMAND_RESPONSE) {
     parse_command_response(buf, &response_code, &id, &data_size, &message_count, sizeof(struct SUCMSHeader));
 
-    //Check if received the correct amount, clean up and exit if not.
-    if (ret != response_length) {
-      std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
-      std::cerr << strerror(errno) << std::endl;
-      close(udp_socket);
-      return 1;
-    }
-
     if (response_code == AUTH_OK){
+      //Check if received the correct amount, clean up and exit if not.
+      if (ret != response_length) {
+        std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
+        std::cerr << strerror(errno) << std::endl;
+        close(udp_socket);
+        return 1;
+      }
+
       struct SUCMSClientGetResult result;
       result.command_type = htons(COMMAND_LIST);
       result.result_id = htons(id);

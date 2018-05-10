@@ -207,8 +207,9 @@ int main(int argc, char *argv[]) {
   parse_response_header(buf, &response_type, &response_length, 0);
 
   //Check if received the correct amount, clean up and exit if not.
-  if (ret != response_length) {
-    std::cerr << "Received " << ret << " instead of " << response_length << "."  << std::endl;
+  if (ret != sizeof(SUCMSHeader)+sizeof(CommandResponse)) {
+	std::cout << "Hi!\n";
+    std::cerr << "Received " << ret << " instead of " << sizeof(SUCMSHeader)+sizeof(CommandResponse) << "."  << std::endl;
     std::cerr << strerror(errno) << std::endl;
     close(udp_socket);
     return 1;
