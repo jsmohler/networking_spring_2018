@@ -1,0 +1,38 @@
+Clone successful.
+Found project1 directory.
+make sucms_list success
+output file sucms_list found
+make sucms_read success
+output file sucms_read found
+make sucms_write success
+output file sucms_write found
+make sucms_delete success
+output file sucms_delete found
+List test, got 11 out of 11
+List test, got 100 out of 100
+List test, got 1 out of 1
+List test, got 1000 out of 1000
+Read test read_nate_test1, output file created
+READ Expected md5 cfe55280c81c3cdec7f63053a096e364, actual cfe55280c81c3cdec7f63053a096e364
+Read test read_nate_test1, output file correct!
+Read test read_nate_test2, output file created
+READ Expected md5 17a760ba7fcdf7e2d5d04f0ee99f3a82, actual 17a760ba7fcdf7e2d5d04f0ee99f3a82
+Read test read_nate_test2, output file correct!
+Read test read_nate_test3, output file created
+READ Expected md5 ddbd6e973175d69b418988eb68452cd1, actual ddbd6e973175d69b418988eb68452cd1
+Read test read_nate_test3, output file correct!
+Write test write_nate_test1, output file created on server (:
+WRITE Expected md5 d6d3519a5302bcf8151b7e3cc6851438, actual d6d3519a5302bcf8151b7e3cc6851438
+Write test write_nate_test1, output file hash correct (:
+Write test write_nate_test2, output file created on server (:
+WRITE Expected md5 2d7ba3aea78db38d25736aec5c719891, actual 2d7ba3aea78db38d25736aec5c719891
+Write test write_nate_test2, output file hash correct (:
+Write test write_nate_test3, output file created on server (:
+WRITE Expected md5 5db51f710a0498a201e4a8b554142f9e, actual 5db51f710a0498a201e4a8b554142f9e
+Write test write_nate_test3, output file hash correct (:
+Total score 1139 out of 1139
+Read score 6 out of 6
+List score 1112 out of 1112
+Write score 6 out of 6
+Delete score 2 out of 2
+Error score 3 out of 3
