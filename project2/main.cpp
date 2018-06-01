@@ -41,23 +41,21 @@ void parse_connect_message(struct ConnectMessage &message, char* data) {
   message.peer_data.ipv4_address = ntohs(message.peer_data.ipv4_address);
 }
 
-void parse_message(struct Message *message, char* data) {
-  memcpy(&message->sender.peer_listen_port, &data, 2);
-  message->sender.peer_listen_port = ntohs(message.sender.peer_listen_port);
+void parse_message(char* data, uint16_t* peer_listen_port, uint32_t* ipv4_address, uint64_t* send_time, uint16_t* nickname_length, uint16_t* message_length) {
+  memcpy(peer_listen_port, &data[sizeof(DataMessage)], 2);
+  *peer_listen_port = ntohs(*peer_listen_port);
 
-  memcpy(&message->sender.ipv4_address, &data, 4);
-  message->sender.ipv4_address = ntohs(message.sender.ipv4_address);
+  memcpy(ipv4_address, &data[sizeof(DataMessage)+2], 4);
+  *ipv4_address = ntohs(*ipv4_address);
 
-  memcpy(&message->send_time, &data[sizeof(PeerInfo)], 8);
-  message->send_time = ntohs(message.send_time);
+  memcpy(send_time, &data[sizeof(DataMessage)+sizeof(PeerInfo)], 8);
+  *send_time = ntohs(*send_time);
 
-  memcpy(&message->nickname_length, &data[sizeof(PeerInfo)+8], 2);
-  std::cout << " parsing nickname length: " << message.nickname_length << std::endl;
-  message->nickname_length = ntohs(message.nickname_length);
-  std::cout << " parsing nickname length: " << message.nickname_length << std::endl;
+  memcpy(nickname_length, &data[sizeof(DataMessage)+sizeof(PeerInfo)+8], 2);
+  *nickname_length = ntohs(*nickname_length);
 
-  memcpy(&message.message_length, &data[sizeof(PeerInfo)+10], 2);
-  message->message_length = ntohs(message.message_length);
+  memcpy(message_length, &data[sizeof(DataMessage)+sizeof(PeerInfo)+10], 2);
+  *message_length = ntohs(*message_length);
 }
 
 void update_message_digest(struct P2PHeader &header, unsigned char* data) {
@@ -352,15 +350,16 @@ int main(int argc, char *argv[]) {
         send_msg.data_header.header.length = htons(msg_len);
         time_t get_time;
         time(&get_time);
-        send_msg.message.send_time = get_time;
-        send_msg.message.nickname_length = nickname_len;
-        std::cout << " sending nickname size: " << nickname_len << std::endl;
-        std::cout << " sending message size: " << line.length() << std::endl;
-        send_msg.message.message_length = sizeof(line);
-        send_msg.message.sender.peer_listen_port = l_port;
+        send_msg.message.send_time = htonl(get_time);
+        send_msg.message.nickname_length = htons(nickname_len);
+
+        send_msg.message.message_length = htons(line.length());
+
+        send_msg.message.sender.peer_listen_port = htons(l_port);
         memcpy(&connect_message.peer_data.ipv4_address, &server_address, sizeof(struct in_addr));
         memcpy(&send_buf, &send_msg, sizeof(SendMessage));
-        memcpy(&send_buf[sizeof(SendMessage)], &nickname, nickname_len);
+        memcpy(&send_buf[sizeof(SendMessage)], nickname.c_str(), nickname_len);
+        std::string n(&send_buf[sizeof(SendMessage)], &send_buf[sizeof(SendMessage)]+nickname_len);
         memcpy(&send_buf[sizeof(SendMessage)+nickname_len], line.c_str(), line.length());
         //update_message_digest(send_msg.data_header.header, (unsigned char*)&send_buf);
         //recopy with hash
@@ -505,19 +504,11 @@ int main(int argc, char *argv[]) {
 
             if (data_message.data_type == SEND_MESSAGE) {
               struct Message recv_msg;
-              //std::cout << 1 << std::endl;
-              parse_message(recv_msg, scratch_buf);
-              std::cout << "nickname size: " << recv_msg.nickname_length << std::endl;
-              std::cout << "message size: " << recv_msg.message_length << std::endl;
-              std::string sender_nickname(&scratch_buf[sizeof(struct Message)], &scratch_buf[sizeof(struct Message)]+recv_msg.nickname_length);
-              std::string sender_message(&scratch_buf[sizeof(struct Message)+recv_msg.nickname_length], &scratch_buf[sizeof(struct Message)+recv_msg.nickname_length] + recv_msg.message_length);
-              //std::cout << 2 << std::endl;
-              // memcpy(&sender_nickname, &scratch_buf[sizeof(struct Message)], recv_msg.nickname_length);
-              // memcpy(&sender_message, &scratch_buf[sizeof(struct Message)+recv_msg.nickname_length], recv_msg.message_length);
-              //std::cout << 3 << std::endl;
-              // sender_nickname[recv_msg.nickname_length] = '\0';
-              // sender_message[recv_msg.message_length] = '\0';
-              //std::cout << 4 << std::endl;
+
+              parse_message(scratch_buf, &recv_msg.sender.peer_listen_port, &recv_msg.sender.ipv4_address, &recv_msg.send_time, &recv_msg.nickname_length, &recv_msg.message_length);
+              std::string sender_nickname(&scratch_buf[sizeof(struct SendMessage)], &scratch_buf[sizeof(struct SendMessage)]+recv_msg.nickname_length);
+              std::string sender_message(&scratch_buf[sizeof(struct SendMessage)+recv_msg.nickname_length], &scratch_buf[sizeof(struct SendMessage)+recv_msg.nickname_length] + recv_msg.message_length);
+
               std::cout << sender_nickname << " said: " << sender_message << std::endl;
 
               //Forward message to all peers except original sender
