@@ -7,6 +7,7 @@
 #include <vector>
 #include <sys/types.h>
 #include <netdb.h>
+#include <time.h>
 #include "openssl/sha.h"
 #include "P2P.h"
 #include "TCPClient.h"
@@ -36,36 +37,55 @@ void parse_connect_message(struct ConnectMessage &message, char* data) {
   memcpy(&message.peer_data.peer_listen_port, &data[38], 2);
   message.peer_data.peer_listen_port = ntohs(message.peer_data.peer_listen_port);
 
-  memcpy(&message.peer_data.ipv4_address, &data[44], 2);
+  memcpy(&message.peer_data.ipv4_address, &data[44], 4);
   message.peer_data.ipv4_address = ntohs(message.peer_data.ipv4_address);
 }
 
-void update_message_digest(struct P2PHeader &header, const unsigned char* data) {
+void parse_message(struct Message *message, char* data) {
+  memcpy(&message->sender.peer_listen_port, &data, 2);
+  message->sender.peer_listen_port = ntohs(message.sender.peer_listen_port);
+
+  memcpy(&message->sender.ipv4_address, &data, 4);
+  message->sender.ipv4_address = ntohs(message.sender.ipv4_address);
+
+  memcpy(&message->send_time, &data[sizeof(PeerInfo)], 8);
+  message->send_time = ntohs(message.send_time);
+
+  memcpy(&message->nickname_length, &data[sizeof(PeerInfo)+8], 2);
+  std::cout << " parsing nickname length: " << message.nickname_length << std::endl;
+  message->nickname_length = ntohs(message.nickname_length);
+  std::cout << " parsing nickname length: " << message.nickname_length << std::endl;
+
+  memcpy(&message.message_length, &data[sizeof(PeerInfo)+10], 2);
+  message->message_length = ntohs(message.message_length);
+}
+
+void update_message_digest(struct P2PHeader &header, unsigned char* data) {
   unsigned char* hash = new unsigned char[32];
+  //std::cout << "test1\n";
   size_t length = header.length - sizeof(P2PHeader);
+  //std::cout << "test2\n";
   SHA256_CTX sha256;
   SHA256_Init(&sha256);
   SHA256_Update(&sha256, &data, length);
   SHA256_Final(hash, &sha256);
+  //std::cout << "test3\n";
   memcpy(&header.msg_hash, &hash, 32);
 }
 
 void parse_control_message(struct ControlMessage &message, char* data) {
-  parse_P2PHeader(message.header, data);
   memcpy(&message.control_type, &data[sizeof(P2PHeader)], 2);
   message.control_type = ntohs(message.control_type);
 }
 
-void parse_data_message(struct DataMessage *message, char* data) {
-  // parse_P2PHeader(&message.header, data);
-  // memcpy(&message.data_type, &data[sizeof(P2PHeader)], 2);
-  // message.data_type = ntohs(message.data_type);
+void parse_data_message(struct DataMessage &message, char* data) {
+  memcpy(&message.data_type, &data[sizeof(P2PHeader)], 2);
+  message.data_type = ntohs(message.data_type);
 }
 
-void parse_error_message(struct ErrorMessage *message, char* data) {
-  // parse_P2PHeader(&message.header, data);
-  // memcpy(&message.error_type, &data[sizeof(P2PHeader)], 2);
-  // message.error_type = ntohs(message.error_type);
+void parse_error_message(struct ErrorMessage &message, char* data) {
+  memcpy(&message.error_type, &data[sizeof(P2PHeader)], 2);
+  message.error_type = ntohs(message.error_type);
 }
 
 int main(int argc, char *argv[]) {
@@ -94,11 +114,14 @@ int main(int argc, char *argv[]) {
   char *seed_port = NULL;
 
   int server_socket;
+  struct in_addr server_address;
   int seed_socket;
   int temp_fd;
 
-  struct sockaddr* listen_address;
+  struct sockaddr_in* listen_address;
   int server_family;
+
+  struct ConnectMessage connect_message;
 
   int ret;
   bool stop = false;
@@ -116,10 +139,6 @@ int main(int argc, char *argv[]) {
   listen_port = argv[2];
   seed_host = argv[3];
   seed_port = argv[4];
-
-  uint16_t l_port;
-  int temp_port = atoi(listen_port);
-  memcpy(&l_port, &temp_port, 2);
 
   // Create the TCP socket.
   // AF_INET is the address family used for IPv4 addresses
@@ -159,8 +178,10 @@ int main(int argc, char *argv[]) {
     // Always free the result of calling getaddrinfo
     freeaddrinfo(results);
 
-    listen_address = results_it->ai_addr;
+    listen_address = (struct sockaddr_in *) results_it->ai_addr;
+    server_address = listen_address->sin_addr;
     server_family = results_it->ai_family;
+    uint16_t l_port = listen_address->sin_port;
 
     if (ret != 0) {
       std::cerr << "Failed to bind to any addresses. Be sure to specify a local address/hostname, and an unused port?"
@@ -178,9 +199,10 @@ int main(int argc, char *argv[]) {
     }
 
     //Get nickname
-    std::string nickname("");
+    std::string nickname;
     std::cout << "Please enter a nickname: ";
-    std::cin >> nickname;
+    getline(std::cin, nickname);
+    uint16_t nickname_len = nickname.length();
 
     // Create the TCP socket.
     // AF_INET is the address family used for IPv4 addresses
@@ -212,7 +234,9 @@ int main(int argc, char *argv[]) {
     seed_results_it = seed_results;
     ret = -1;
 
-    seed_client = new TCPClient(seed_socket, (struct sockaddr_storage *) seed_results_it->ai_addr, seed_results_it->ai_addrlen);
+    struct sockaddr_in* seed_addr = (struct sockaddr_in *) seed_results_it->ai_addr;
+
+    seed_client = new TCPClient(seed_socket, (struct sockaddr_storage *) seed_addr, seed_results_it->ai_addrlen);
 
     //Connect to seed host
     while (seed_results_it != NULL) {
@@ -229,7 +253,8 @@ int main(int argc, char *argv[]) {
     freeaddrinfo(results);
 
     max_fd = 0;
-
+    time_t current_time;
+    time(&current_time);
     while (stop == false) {
       FD_ZERO(&read_set);
       FD_ZERO(&write_set);
@@ -250,6 +275,10 @@ int main(int argc, char *argv[]) {
 
         // Always check if the client has sent us data
         FD_SET(client_list[i]->get_fd(), &read_set);
+
+        // Always check if the user has sent us data
+        FD_SET(0, &read_set);
+
 
         // Check if client has data to send. If so, add it to the write_set
         // If there isn't data to write, don't set it (prevents pegging CPU)
@@ -286,42 +315,71 @@ int main(int argc, char *argv[]) {
 
         //Send ConnectMessage
         // Structure to fill in with connect message info
-        struct ConnectMessage connect;
         // Zero out structure
-        memset(&connect, 0, sizeof(struct ConnectMessage));
-        connect.control_header.header.type = htons(CONTROL_MSG);
-        connect.control_header.header.length = htons(sizeof(struct ConnectMessage));
-        connect.control_header.control_type = htons(CONNECT);
+        memset(&connect_message, 0, sizeof(struct ConnectMessage));
+        connect_message.control_header.header.type = htons(CONTROL_MSG);
+        connect_message.control_header.header.length = htons(sizeof(struct ConnectMessage));
+        connect_message.control_header.control_type = htons(CONNECT);
 
-        //Could have both, but might not
-        if (results_it->ai_family == AF_INET) {
-          memcpy(&connect.peer_data.ipv4_address, &listen_address, sizeof(struct in_addr));
-        }
-        if (results_it->ai_family == AF_INET6) {
-          memcpy(&connect.peer_data.ipv6_address, &listen_address, sizeof(struct in6_addr));
+        if (server_family == AF_INET) {
+          memcpy(&connect_message.peer_data.ipv4_address, &server_address, sizeof(struct in_addr));
         }
 
-        connect.peer_data.peer_listen_port = htons(l_port);
+        connect_message.peer_data.peer_listen_port = htons(l_port);
 
         // Create hash after filling in rest of message.
         unsigned char* connect_data;
-        memcpy(&connect_data, &connect, sizeof(struct ConnectMessage));
-        update_message_digest(connect.control_header.header, connect_data);
+        memcpy(&connect_data, &connect_message, sizeof(struct ConnectMessage));
+        //update_message_digest(connect_message.control_header.header, connect_data);
 
-        if (temp_client->add_send_data((char *) &connect, sizeof(struct ConnectMessage)) != true) {
+        if (temp_client->add_send_data((char *) &connect_message, sizeof(struct ConnectMessage)) != true) {
           std::cerr << "Failed to add send data to client!" << std::endl;
         }
-        //
-        // //Send connect message
-        // // Store how many bytes this client has ready to send
-        // int send_bytes = temp_client->bytes_ready_to_send();
-        // // Copy send bytes into our local send buffer
-        // temp_client->get_send_data(send_buf, DEFAULT_BUFFER_SIZE);
-        // // Finally, send the data to the client.
-        // ret = send(temp_client->get_fd(), send_buf, send_bytes, 0);
 
         // Add the new client to the list of clients we have
         client_list.push_back(temp_client);
+      }
+
+      if (FD_ISSET(0, &read_set)) {
+        std::string line;
+        std::getline(std::cin, line);
+        //std::cout << line << std::endl;
+        //Send message
+        struct SendMessage send_msg;
+        size_t msg_len = sizeof(struct SendMessage) + nickname_len + line.length();
+        send_msg.data_header.data_type = htons(SEND_MESSAGE);
+        send_msg.data_header.header.type = htons(DATA_MSG);
+        send_msg.data_header.header.length = htons(msg_len);
+        time_t get_time;
+        time(&get_time);
+        send_msg.message.send_time = get_time;
+        send_msg.message.nickname_length = nickname_len;
+        std::cout << " sending nickname size: " << nickname_len << std::endl;
+        std::cout << " sending message size: " << line.length() << std::endl;
+        send_msg.message.message_length = sizeof(line);
+        send_msg.message.sender.peer_listen_port = l_port;
+        memcpy(&connect_message.peer_data.ipv4_address, &server_address, sizeof(struct in_addr));
+        memcpy(&send_buf, &send_msg, sizeof(SendMessage));
+        memcpy(&send_buf[sizeof(SendMessage)], &nickname, nickname_len);
+        memcpy(&send_buf[sizeof(SendMessage)+nickname_len], line.c_str(), line.length());
+        //update_message_digest(send_msg.data_header.header, (unsigned char*)&send_buf);
+        //recopy with hash
+        memcpy(&send_buf, &send_msg, sizeof(SendMessage));
+
+        //send message to every client
+        for (int i = 0; i < client_list.size(); i++) {
+          ret = send(client_list[i]->get_fd(), send_buf, msg_len, 0);
+          if (ret == -1) {
+            perror("send");
+            // On error, something bad bad has happened to this client. Remove.
+            close(client_list[i]->get_fd());
+            client_list.erase(client_list.begin() + i);
+            break;
+          } else if(ret != msg_len) {
+            std::cout << "Error sending message\n";
+            std::cout << "Sent " << ret << " instead of " << msg_len << std::endl;
+          }
+        }
       }
 
       for (int i = 0; i < client_list.size(); i++) {
@@ -382,6 +440,8 @@ int main(int argc, char *argv[]) {
           memcpy(&type, &scratch_buf, 2);
           type = ntohs(type);
 
+          //add message hash to message history
+
           if (type == CONTROL_MSG) {
 
             struct ControlMessage control_message;
@@ -391,39 +451,35 @@ int main(int argc, char *argv[]) {
             if (control_message.control_type == CONNECT) {
               //Send CONNECT_OK
               std::cout << "Received Connect Message.\n";
-              struct ConnectMessage connect;
-              parse_connect_message(connect, scratch_buf);
+              struct ConnectMessage recv_connect_message;
+              parse_connect_message(recv_connect_message, scratch_buf);
 
-              //Send ConnectMessage with CONNECT_OK
-              // Structure to fill in with connect message info
-              //struct ConnectMessage connect;
               // Zero out structure
-              memset(&connect, 0, sizeof(struct ConnectMessage));
-
-              connect.control_header.header.type = htons(CONTROL_MSG);
-              connect.control_header.header.length = htons(sizeof(struct ConnectMessage));
-              connect.control_header.control_type = htons(CONNECT_OK);
+              memset(&connect_message, 0, sizeof(struct ConnectMessage));
+              connect_message.control_header.header.type = htons(CONTROL_MSG);
+              connect_message.control_header.header.length = htons(sizeof(struct ConnectMessage));
+              connect_message.control_header.control_type = htons(CONNECT_OK);
 
               //Could have both, but might not
               if (server_family == AF_INET) {
-                memcpy(&connect.peer_data.ipv4_address, &listen_address, sizeof(struct in_addr));
+                memcpy(&connect_message.peer_data.ipv4_address, &server_address, sizeof(struct in_addr));
               }
 
               if (server_family == AF_INET6) {
-                memcpy(&connect.peer_data.ipv6_address, &listen_address, sizeof(struct in6_addr));
+                memcpy(&connect_message.peer_data.ipv6_address, &server_address, sizeof(struct in6_addr));
               }
-
-              connect.peer_data.peer_listen_port = htons(l_port);
+              connect_message.peer_data.peer_listen_port = htons(l_port);
 
               // Create hash after filling in rest of message.
               unsigned char* connect_data;
-              memcpy(&connect_data, &connect, sizeof(struct ConnectMessage));
-              update_message_digest(connect.control_header.header, connect_data);
-
-              if (client_list[i]->add_send_data((char *) &connect, sizeof(struct ConnectMessage)) != true) {
+              memcpy(&connect_data, &connect_message, sizeof(struct ConnectMessage));
+              //std::cout << "R2" << std::endl;
+              //update_message_digest(connect_message.control_header.header, connect_data);
+              //std::cout << "R3" << std::endl;
+              if (client_list[i]->add_send_data((char *) &connect_message, sizeof(struct ConnectMessage)) != true) {
                 std::cerr << "Failed to add send data to client!" << std::endl;
               }
-
+              //std::cout << "R4" << std::endl;
             } else if (control_message.control_type == CONNECT_OK) {
               //Do Nothing
               std::cout << "Received Connect OK Message.\n";
@@ -445,15 +501,46 @@ int main(int argc, char *argv[]) {
 
             struct DataMessage data_message;
             std::cout << "Received Data Message.\n";
-            parse_data_message(&data_message, scratch_buf);
+            parse_data_message(data_message, scratch_buf);
 
+            if (data_message.data_type == SEND_MESSAGE) {
+              struct Message recv_msg;
+              //std::cout << 1 << std::endl;
+              parse_message(recv_msg, scratch_buf);
+              std::cout << "nickname size: " << recv_msg.nickname_length << std::endl;
+              std::cout << "message size: " << recv_msg.message_length << std::endl;
+              std::string sender_nickname(&scratch_buf[sizeof(struct Message)], &scratch_buf[sizeof(struct Message)]+recv_msg.nickname_length);
+              std::string sender_message(&scratch_buf[sizeof(struct Message)+recv_msg.nickname_length], &scratch_buf[sizeof(struct Message)+recv_msg.nickname_length] + recv_msg.message_length);
+              //std::cout << 2 << std::endl;
+              // memcpy(&sender_nickname, &scratch_buf[sizeof(struct Message)], recv_msg.nickname_length);
+              // memcpy(&sender_message, &scratch_buf[sizeof(struct Message)+recv_msg.nickname_length], recv_msg.message_length);
+              //std::cout << 3 << std::endl;
+              // sender_nickname[recv_msg.nickname_length] = '\0';
+              // sender_message[recv_msg.message_length] = '\0';
+              //std::cout << 4 << std::endl;
+              std::cout << sender_nickname << " said: " << sender_message << std::endl;
+
+              //Forward message to all peers except original sender
+
+
+            } else if (data_message.data_type == FORWARD_MESSAGE) {
+              //forward message if new and add to message history
+            } else if (data_message.data_type == GET_MESSAGE_HISTORY) {
+              //send message history
+            } else if (data_message.data_type == SEND_MESSAGE_HISTORY) {
+              //receive message history
+            } else {
+              std::cout << "Something went very, very wrong.\n";
+              std::cout << "Data Message Type: " << data_message.data_type << std::endl;
+            }
           } else if (type == ERROR_MSG) {
 
             struct ErrorMessage error_message;
             std::cout << "Received Error Message.\n";
-            parse_error_message(&error_message, scratch_buf);
+            parse_error_message(error_message, scratch_buf);
 
           } else {
+            //Send error message??
             std::cout << "Something went very, very wrong.\n";
             std::cout << "P2P Header Message Type: " << header.type << std::endl;
           }
