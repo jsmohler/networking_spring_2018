@@ -81,6 +81,8 @@ void send_find_peer(TCPClient* client) {
   //Send message to given client
   if (client->add_send_data((char *) &find_peer, sizeof(struct FindPeersMessage)) != true) {
     std::cerr << "Failed to add send data to client!" << std::endl;
+  } else {
+    std::cout << "Sent Find Peers Message\n";
   }
 }
 
@@ -118,7 +120,7 @@ void send_message(uint64_t time_recv, uint16_t listen_port, uint32_t listen_addr
   if (client->add_send_data((char *) &snd_msg, msg_size) != true) {
     std::cerr << "Failed to add send data to client!" << std::endl;
   } else {
-    std::cout << "sent: " << message.c_str() << std::endl;
+    std::cout << "You said: " << message.c_str() << std::endl;
   }
 }
 
@@ -156,7 +158,7 @@ void forward_message(uint64_t time_recv, uint16_t listen_port, uint32_t listen_a
   if (client->add_send_data((char *) &fwd_msg, msg_size) != true) {
     std::cerr << "Failed to add send data to client!" << std::endl;
   } else {
-    std::cout << "Forward\n";
+    //std::cout << "Forward\n";
   }
 }
 
@@ -349,7 +351,7 @@ int main(int argc, char *argv[]) {
     max_fd = 0;
     time_t current_time;
     time(&current_time);
-
+    bool first = true;
     while (stop == false) {
       FD_ZERO(&read_set);
       FD_ZERO(&write_set);
@@ -393,9 +395,10 @@ int main(int argc, char *argv[]) {
       time(&update_time);
 
       std::cout << "Enter a message or type stop to exit: " << std::endl;
-      if ((update_time-current_time) < 30 && (update_time-current_time) >= 25) {
+      if ((update_time-current_time) < 30 && (update_time-current_time) >= 25 && first) {
         //query seed peer within first 30 seconds
         send_find_peer(client_list[0]);
+        first = false;
       }
 
       if (update_time % 30 == 0) {
@@ -524,25 +527,32 @@ int main(int argc, char *argv[]) {
           struct P2PHeader header;
 
           uint16_t type;
-          memcpy(&type, &scratch_buf, 2);
+          memcpy(&type, scratch_buf, 2);
           type = ntohs(type);
           header.type = type;
 
+          uint16_t length;
+          memcpy(&length, &scratch_buf[2], 2);
+          length = ntohs(length);
 
-          unsigned char hash[32];
-          memcpy(&hash, &scratch_buf[4], 32);
+          // Create hash after filling in rest of message.
+          unsigned char* hash = (unsigned char *)scratch_buf;
+          unsigned char new_hash[32];
+          // Note the P2PHeader is left off, as it is the part that holds the hash!
+          SHA256(&hash[sizeof(P2PHeader)], length - sizeof(P2PHeader), (unsigned char*)new_hash);
 
           //add message hash to message history
+
+          //This is an attempt to compare hashes to see if a message has already been seen
+          //however, it doesnt work
           bool seen = false;
           for (int m = 0; m < message_history.size(); m++) {
-            if (message_history.at(m) == hash) {
+            if (strcmp((char*)message_history.at(m), (char*)new_hash) == 0) {
               seen = true;
             }
           }
 
-          if (! seen) {
-            message_history.push_back(hash);
-          }
+          message_history.push_back(new_hash);
 
           if (header.type == CONTROL_MSG) {
 
@@ -551,7 +561,7 @@ int main(int argc, char *argv[]) {
 
             if (control_message.control_type == CONNECT) {
               //Send CONNECT_OK
-              std::cout << "Received Connect Message.\n";
+              //std::cout << "Received Connect Message.\n";
               struct ConnectMessage recv_connect_message;
               parse_connect_message(recv_connect_message, scratch_buf);
 
@@ -579,17 +589,17 @@ int main(int argc, char *argv[]) {
 
             } else if (control_message.control_type == CONNECT_OK) {
               //Do Nothing
-              std::cout << "Received Connect OK Message.\n";
+              //std::cout << "Received Connect OK Message.\n";
 
             } else if (control_message.control_type == DISCONNECT) {
               //Remove peer from vector
-              std::cout << "Received Disconnect Message.\n";
+              //std::cout << "Received Disconnect Message.\n";
               int removed_client = i;
               client_list.erase(client_list.begin() + removed_client);
-              std::cout << "Removed client " << removed_client << " from list.\n";
+              //std::cout << "Removed client " << removed_client << " from list.\n";
             } else if (control_message.control_type == FIND_PEERS) {
               //Gossip back
-              std::cout << "Received Find Peers Message.\n";
+              //std::cout << "Received Find Peers Message.\n";
 
               //find peer
               int random_peer = rand() % client_list.size();
@@ -664,7 +674,7 @@ int main(int argc, char *argv[]) {
                 struct sockaddr_in* found_client = (struct sockaddr_in*) client_list[i]->get_client_listen_address();
 
                 if(found_client == NULL) {
-                  std::cout << "it's null :(\n";
+                  std::cout << "Invalid client address.\n";
                 }
 
 
@@ -674,7 +684,7 @@ int main(int argc, char *argv[]) {
                   temp_client->add_client_listen_address((struct sockaddr_storage*) found_client, sizeof(struct sockaddr_storage));
 
                   client_list.push_back(temp_client);
-                  std::cout << "Conencted to new peer!\n";
+                  //std::cout << "Conncted to new peer!\n";
                   break;
                 }
                 perror("connect");
@@ -706,8 +716,8 @@ int main(int argc, char *argv[]) {
               if (temp_client->add_send_data((char *) &connect_message, sizeof(struct ConnectMessage)) != true) {
                 std::cerr << "Failed to add send data to client!" << std::endl;
               }
-              std::cout << "Sent connect message to " << temp_fd << std::endl;
-              std::cout << "Received Gossip Peers Message.\n";
+              std::cout << "Sent Connect Message\n";
+              //std::cout << "Received Gossip Peers Message.\n";
             } else {
               std::cout << "Something went very, very wrong.\n";
               std::cout << "Control Message Type: " << header.type << std::endl;
@@ -726,32 +736,45 @@ int main(int argc, char *argv[]) {
 
               std::cout << sender_nickname.c_str() << " said: " << sender_message.c_str() << std::endl;
 
+              unsigned char hash[32];
+              memcpy(&hash, &scratch_buf[4], 32);
+              message_history.push_back(hash);
+
               //Forward message to all peers except original sender
               for (int j = 0; j < client_list.size(); j++) {
                 if (j != i) {
                     forward_message(recv_msg.send_time, recv_msg.sender.peer_listen_port, recv_msg.sender.ipv4_address, (char*) sender_nickname.c_str(), (char*) sender_message.c_str(), client_list[j]);
-                    std::cout << "Forwarded message\n";
+                    //std::cout << "Forwarded message\n";
                 }
               }
 
             } else if (data_message.data_type == FORWARD_MESSAGE) {
-              struct Message recv_msg;
 
-              parse_message(scratch_buf, &recv_msg.sender.peer_listen_port, &recv_msg.sender.ipv4_address, &recv_msg.send_time, &recv_msg.nickname_length, &recv_msg.message_length);
-              std::string sender_nickname(&scratch_buf[sizeof(struct SendMessage)], &scratch_buf[sizeof(struct SendMessage)]+recv_msg.nickname_length);
-              std::string sender_message(&scratch_buf[sizeof(struct SendMessage)+recv_msg.nickname_length], &scratch_buf[sizeof(struct SendMessage)+recv_msg.nickname_length] + recv_msg.message_length);
+                struct Message recv_msg;
 
-              std::cout << sender_nickname.c_str() << " said: " << sender_message.c_str() << std::endl;
+                parse_message(scratch_buf, &recv_msg.sender.peer_listen_port, &recv_msg.sender.ipv4_address, &recv_msg.send_time, &recv_msg.nickname_length, &recv_msg.message_length);
+                std::string sender_nickname(&scratch_buf[sizeof(struct SendMessage)], &scratch_buf[sizeof(struct SendMessage)]+recv_msg.nickname_length);
+                std::string sender_message(&scratch_buf[sizeof(struct SendMessage)+recv_msg.nickname_length], &scratch_buf[sizeof(struct SendMessage)+recv_msg.nickname_length] + recv_msg.message_length);
 
-              //forward message if new and add to message history
+                unsigned char found_hash[32];
+                unsigned char* fwd_hash = (unsigned char *)scratch_buf;
+                // Note the P2PHeader is left off, as it is the part that holds the hash!
+                SHA256(&fwd_hash[sizeof(P2PHeader)], length - sizeof(P2PHeader), (unsigned char*)found_hash);
+                std::cout << sender_nickname.c_str() << " said: " << sender_message.c_str() << std::endl;
+                message_history.push_back(found_hash);
+
+              //this is were I would forward the message if I had not seen the hash before
+              //however, because the comparison of hashes isn't working, this is commented out
+              // to avoid flooding people with forward messages
               if (! seen) {
-                //Forward message to all peers except original sender
-                for (int j = 0; j < client_list.size(); j++) {
-                  if (j != i) {
-                      forward_message(recv_msg.send_time, recv_msg.sender.peer_listen_port, recv_msg.sender.ipv4_address, (char*) sender_nickname.c_str(), (char*) sender_message.c_str(), client_list[j]);
-                      std::cout << "Forwarded message\n";
-                  }
-                }
+                // //forward message if new and add to message history
+                // //Forward message to all peers except original sender
+                // for (int j = 0; j < client_list.size(); j++) {
+                //   if (j != i) {
+                //       forward_message(recv_msg.send_time, recv_msg.sender.peer_listen_port, recv_msg.sender.ipv4_address, (char*) sender_nickname.c_str(), (char*) sender_message.c_str(), client_list[j]);
+                //   }
+                // }
+                seen = false;
               }
             } else if (data_message.data_type == GET_MESSAGE_HISTORY) {
               //send message history
@@ -764,11 +787,10 @@ int main(int argc, char *argv[]) {
               if (client_list[i]->add_send_data((char *) &send_buf, 32*message_history.size()) != true) {
                 std::cerr << "Failed to add send data to client!" << std::endl;
               } else {
-                std::cout << "Sent message history\n";
               }
             } else if (data_message.data_type == SEND_MESSAGE_HISTORY) {
               //receive message history
-              std::cout << "Recieved message history.\n";
+              //std::cout << "Recieved message history.\n";
             } else {
               std::cout << "Something went very, very wrong.\n";
               std::cout << "Data Message Type: " << data_message.data_type << std::endl;
@@ -776,7 +798,7 @@ int main(int argc, char *argv[]) {
           } else if (header.type == ERROR_MSG) {
 
             struct ErrorMessage error_message;
-            std::cout << "Received Error Message.\n";
+            //std::cout << "Received Error Message.\n";
             parse_error_message(error_message, scratch_buf);
             if(error_message.error_type == INCORRECT_MESSAGE_SIZE) {
               std::cout << "Error: Incorrect Message Size\n";
