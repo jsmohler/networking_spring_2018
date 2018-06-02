@@ -98,19 +98,19 @@ void send_message(uint64_t time_recv, uint16_t listen_port, uint32_t listen_addr
 
   char snd_msg[DEFAULT_BUFFER_SIZE];
 
-  memcpy(&snd_msg, &send, sizeof(SendMessage));
+  memcpy(snd_msg, &send, sizeof(SendMessage));
   memcpy(&snd_msg[sizeof(ForwardMessage)], nickname.c_str(), nickname.length());
   memcpy(&snd_msg[sizeof(ForwardMessage)+nickname.length()], message.c_str(), message.length());
 
   // Create hash after filling in rest of message.
-  unsigned char* send_data = (unsigned char *)&snd_msg;
+  unsigned char* send_data = (unsigned char *)snd_msg;
   size_t send_size = msg_size;
 
   // Note the P2PHeader is left off, as it is the part that holds the hash!
-  SHA256(&send_data[sizeof(P2PHeader)], send_size - sizeof(P2PHeader), (unsigned char*)&send.data_header.header.msg_hash);
+  SHA256(&send_data[sizeof(P2PHeader)], send_size - sizeof(P2PHeader), (unsigned char*)send.data_header.header.msg_hash);
 
   //recopy with Hash
-  memcpy(&snd_msg, &send, sizeof(SendMessage));
+  memcpy(snd_msg, &send, sizeof(SendMessage));
   memcpy(&snd_msg[sizeof(ForwardMessage)], nickname.c_str(), nickname.length());
   memcpy(&snd_msg[sizeof(ForwardMessage)+nickname.length()], message.c_str(), message.length());
 
@@ -136,19 +136,19 @@ void forward_message(uint64_t time_recv, uint16_t listen_port, uint32_t listen_a
 
   char fwd_msg[DEFAULT_BUFFER_SIZE];
 
-  memcpy(&fwd_msg, &forward, sizeof(ForwardMessage));
+  memcpy(fwd_msg, &forward, sizeof(ForwardMessage));
   memcpy(&fwd_msg[sizeof(ForwardMessage)], nickname.c_str(), nickname.length());
   memcpy(&fwd_msg[sizeof(ForwardMessage)+nickname.length()], message.c_str(), message.length());
 
   // Create hash after filling in rest of message.
-  unsigned char* forward_data = (unsigned char *)&fwd_msg;
+  unsigned char* forward_data = (unsigned char *)fwd_msg;
   size_t send_size = msg_size;
 
   // Note the P2PHeader is left off, as it is the part that holds the hash!
-  SHA256(&forward_data[sizeof(P2PHeader)], send_size - sizeof(P2PHeader), (unsigned char*)&forward.data_header.header.msg_hash);
+  SHA256(&forward_data[sizeof(P2PHeader)], send_size - sizeof(P2PHeader), (unsigned char*)forward.data_header.header.msg_hash);
 
   //recopy with Hash
-  memcpy(&fwd_msg, &forward, sizeof(ForwardMessage));
+  memcpy(fwd_msg, &forward, sizeof(ForwardMessage));
   memcpy(&fwd_msg[sizeof(ForwardMessage)], nickname.c_str(), nickname.length());
   memcpy(&fwd_msg[sizeof(ForwardMessage)+nickname.length()], message.c_str(), message.length());
 
@@ -309,6 +309,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in* seed_addr = (struct sockaddr_in *) seed_results_it->ai_addr;
 
     seed_client = new TCPClient(seed_socket, (struct sockaddr_storage*) seed_addr, seed_results_it->ai_addrlen);
+    seed_client->add_client_listen_address((struct sockaddr_storage*) seed_addr, seed_results_it->ai_addrlen);
 
     //Send ConnectMessage
     // Structure to fill in with connect message info
@@ -392,16 +393,16 @@ int main(int argc, char *argv[]) {
       time(&update_time);
 
       std::cout << "Enter a message or type stop to exit: " << std::endl;
-      // if ((update_time-current_time) < 30 && (update_time-current_time) >= 25) {
-      //   //query seed peer within first 30 seconds
-      //   send_find_peer(client_list[0]);
-      // }
-      //
-      // if (update_time % 30 == 0) {
-      //   for (int i = 0; i < client_list.size(); i++) {
-      //     send_find_peer(client_list[i]);
-      //   }
-      // }
+      if ((update_time-current_time) < 30 && (update_time-current_time) >= 25) {
+        //query seed peer within first 30 seconds
+        send_find_peer(client_list[0]);
+      }
+
+      if (update_time % 30 == 0) {
+        for (int i = 0; i < client_list.size(); i++) {
+          send_find_peer(client_list[i]);
+        }
+      }
 
       ret = select(max_fd + 1, &read_set, &write_set, NULL, &timeout);
 
@@ -613,10 +614,19 @@ int main(int argc, char *argv[]) {
               inet_aton(hostPart.c_str(), &in_ip);
               memcpy(&send_peer.ipv4_address, &in_ip, sizeof(struct in_addr));
 
-              memcpy(&send_buf, &gossip_msg, sizeof(GossipPeersMessage));
+              memcpy(send_buf, &gossip_msg, sizeof(GossipPeersMessage));
               memcpy(&send_buf[sizeof(GossipPeersMessage)], &send_peer, sizeof(PeerInfo));
 
               //add hash
+              // Create hash after filling in rest of message.
+              unsigned char* gossip_data = (unsigned char *)send_buf;
+              size_t send_size = sizeof(struct GossipPeersMessage) + sizeof(PeerInfo);
+
+              // Note the P2PHeader is left off, as it is the part that holds the hash!
+              SHA256(&gossip_data[sizeof(P2PHeader)], send_size - sizeof(P2PHeader), (unsigned char*)gossip_msg.control_header.header.msg_hash);
+
+              memcpy(send_buf, &gossip_msg, sizeof(GossipPeersMessage));
+              memcpy(&send_buf[sizeof(GossipPeersMessage)], &send_peer, sizeof(PeerInfo));
 
               //send
               if (client_list[i]->add_send_data(send_buf, sizeof(GossipPeersMessage)+sizeof(PeerInfo)) != true) {
@@ -629,6 +639,7 @@ int main(int argc, char *argv[]) {
 
               memcpy(&num_results, &scratch_buf[sizeof(ControlMessage)], 2);
               std::vector<struct PeerInfo> found_peers;
+
 
               for (int n = 0; n < num_results; n++) {
                 struct PeerInfo peer;
@@ -650,33 +661,23 @@ int main(int argc, char *argv[]) {
                   return 1;
                 }
 
-                struct sockaddr_in found_client;
-                found_client.sin_family = AF_INET;
-                found_client.sin_port = htons(16666);
-                printf("port: %u\n", ntohs(found_client.sin_port));
-                found_client.sin_addr = new_client;
+                struct sockaddr_in* found_client = (struct sockaddr_in*) client_list[i]->get_client_listen_address();
 
-                // Check we have at least one result
-                results_it = results;
-
-                while (results_it != NULL) {
-                  std::cout << "Trying to connect\n";
-                  ret = connect(temp_socket, (struct sockaddr *)&found_client, sizeof(found_client));
-                  if (ret == 0) {
-                    struct sockaddr_in* temp_addr = (struct sockaddr_in *) results_it->ai_addr;
-
-                    temp_client = new TCPClient(temp_socket, (struct sockaddr_storage*) temp_addr, results_it->ai_addrlen);
-
-                    client_list.push_back(temp_client);
-                    std::cout << "Conencted to new peer!\n";
-                    break;
-                  }
-                  perror("connect");
-                  results_it = results_it->ai_next;
+                if(found_client == NULL) {
+                  std::cout << "it's null :(\n";
                 }
 
-                // Whatever happened, we need to free the address list.
-                freeaddrinfo(results);
+
+                ret = connect(temp_socket, (struct sockaddr *)found_client, sizeof(struct sockaddr_in));
+                if (ret == 0) {
+                  temp_client = new TCPClient(temp_socket, (struct sockaddr_storage*) found_client, sizeof(struct sockaddr_storage));
+                  temp_client->add_client_listen_address((struct sockaddr_storage*) found_client, sizeof(struct sockaddr_storage));
+
+                  client_list.push_back(temp_client);
+                  std::cout << "Conencted to new peer!\n";
+                  break;
+                }
+                perror("connect");
 
                 // Check if connecting succeeded at all
                 if (ret != 0) {
@@ -796,7 +797,20 @@ int main(int argc, char *argv[]) {
       }
     }
     //Send disconnect to all peers
+    struct ControlMessage disconnect;
+    disconnect.header.type = CONTROL_MSG;
+    disconnect.header.length = sizeof(ControlMessage);
+    disconnect.control_type = DISCONNECT;
+
     for (int i = 0; i < client_list.size(); i++) {
-      std::cout << "disconnect\n";
+      ret = send(client_list[i]->get_fd(), &disconnect, sizeof(ControlMessage), 0);
+      if (ret == -1) {
+        perror("send");
+        // On error, something bad bad has happened to this client. Remove.
+        close(client_list[i]->get_fd());
+        client_list.erase(client_list.begin() + i);
+        break;
+      }
     }
+    client_list.clear();
   }
